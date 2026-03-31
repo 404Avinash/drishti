@@ -1,0 +1,124 @@
+[
+  {
+    "accident_id": "CRS_2023_BALASORE",
+    "date": "2023-06-02",
+    "station": "Bahanaga Bazar",
+    "train_ids": [
+      "12841",
+      "12003",
+      "Goods_Train"
+    ],
+    "deaths": 296,
+    "signal_state": "GREEN",
+    "track_state": "LOOP_LINE",
+    "maintenance_active": true,
+    "time_of_day": "NIGHT",
+    "train_types": [
+      "PASSENGER",
+      "PASSENGER",
+      "GOODS"
+    ],
+    "delay_before_accident_minutes": 45,
+    "root_cause": "Signal-track mismatch (maintenance reconfiguration)"
+  },
+  {
+    "accident_id": "CRS_1999_GAISAL",
+    "date": "1999-08-02",
+    "station": "Gaisal",
+    "train_ids": [
+      "2301",
+      "Goods_Train"
+    ],
+    "deaths": 290,
+    "signal_state": "ERROR",
+    "track_state": "MAIN_LINE",
+    "maintenance_active": true,
+    "time_of_day": "NIGHT",
+    "train_types": [
+      "PASSENGER",
+      "GOODS"
+    ],
+    "delay_before_accident_minutes": 32,
+    "root_cause": "Signaling error, maintenance zone closure"
+  },
+  {
+    "accident_id": "CRS_2024_KANCHANJUNGHA",
+    "date": "2024-01-16",
+    "station": "Agartala",
+    "train_ids": [
+      "13015",
+      "Goods_Train"
+    ],
+    "deaths": 15,
+    "signal_state": "RED_OVERSHOT",
+    "track_state": "MAIN_LINE",
+    "maintenance_active": false,
+    "time_of_day": "NIGHT",
+    "train_types": [
+      "PASSENGER",
+      "GOODS"
+    ],
+    "delay_before_accident_minutes": 41,
+    "root_cause": "Goods train overshooting red signal"
+  },
+  {
+    "accident_id": "CRS_1998_KHANNA",
+    "date": "1998-11-02",
+    "station": "Khanna",
+    "train_ids": [
+      "3301",
+      "1407"
+    ],
+    "deaths": 212,
+    "signal_state": "UNKNOWN",
+    "track_state": "MAIN_LINE",
+    "maintenance_active": false,
+    "time_of_day": "NIGHT",
+    "train_types": [
+      "PASSENGER",
+      "PASSENGER"
+    ],
+    "delay_before_accident_minutes": 38,
+    "root_cause": "Derailment leading to collision"
+  },
+  {
+    "accident_id": "CRS_2024_VIZIANAGARAM",
+    "date": "2024-03-15",
+    "station": "Vizianagaram",
+    "train_ids": [
+      "14101",
+      "Goods_Train"
+    ],
+    "deaths": 14,
+    "signal_state": "RED_OVERSHOT",
+    "track_state": "LOOP_LINE",
+    "maintenance_active": false,
+    "time_of_day": "NIGHT",
+    "train_types": [
+      "PASSENGER",
+      "GOODS"
+    ],
+    "delay_before_accident_minutes": 29,
+    "root_cause": "Signal passed at danger"
+  },
+  {
+    "accident_id": "CRS_1995_FIROZABAD",
+    "date": "1995-11-20",
+    "station": "Firozabad",
+    "train_ids": [
+      "1007",
+      "1013"
+    ],
+    "deaths": 358,
+    "signal_state": "RED_OVERSHOT",
+    "track_state": "MAIN_LINE",
+    "maintenance_active": false,
+    "time_of_day": "NIGHT",
+    "train_types": [
+      "PASSENGER",
+      "PASSENGER"
+    ],
+    "delay_before_accident_minutes": 25,
+    "root_cause": "Signal failure, rear collision"
+  }
+]
