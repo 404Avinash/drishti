@@ -2,7 +2,9 @@ services:
   - type: web
     name: drishti-api
     runtime: python
-    buildCommand: pip install -r requirements.txt
+    buildCommand: |
+      cd frontend && npm install && npm run build && cd ..
+      pip install -r requirements.txt
     startCommand: uvicorn backend.api.server:app --host 0.0.0.0 --port $PORT
     plan: free
     envVars:
@@ -10,7 +12,5 @@ services:
         value: mock
       - key: LOG_LEVEL
         value: INFO
-      - key: BATCH_SIZE
-        value: "100"
       - key: PYTHON_VERSION
-        value: "3.11.0"
+        value: "3.10.0"

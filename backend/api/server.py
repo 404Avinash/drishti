@@ -1,22 +1,23 @@
 """
-DRISHTI FastAPI Server v4.0
-Real-time Railway Accident Prevention — Self-contained with mock streaming
+DRISHTI FastAPI Server v5.0
+Real-time Railway Accident Prevention — React SPA Backend Hub
 """
 
-import json, asyncio, logging, random, uuid
+import json, asyncio, logging, random, uuid, os
 from datetime import datetime
 from typing import List, Optional, Dict
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, Query
+from fastapi import FastAPI, WebSocket, Query, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="DRISHTI API", description="Railway Accident Prevention System", version="4.0")
+app = FastAPI(title="DRISHTI API", description="Railway Accident Prevention System", version="5.0")
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True,
                    allow_methods=["*"], allow_headers=["*"])
@@ -30,7 +31,7 @@ stats = {
     "uptime_start": datetime.now().isoformat()
 }
 
-# ── Indian Railways Data ──────────────────────────────────────────────────────
+# ── Indian Railways Data (With Coordinates) ───────────────────────────────────
 TRAINS = [
     ("12001","Shatabdi Express"), ("12951","Mumbai Rajdhani"), ("12309","Patna Rajdhani"),
     ("12301","Howrah Rajdhani"), ("22691","Bangalore Rajdhani"), ("12622","Tamil Nadu Express"),
@@ -38,19 +39,24 @@ TRAINS = [
     ("12801","Purushottam SF"), ("12275","Duronto Express"), ("20503","NE Rajdhani"),
     ("12423","Dibrugarh Rajdhani"), ("12813","Steel Express"), ("12559","Shiv Ganga Express"),
     ("12381","Poorva Express"), ("14005","Lichchavi Express"), ("12002","Bhopal Shatabdi"),
-    ("22119","Mumbai-Goa Tejas"), ("12259","Sealdah Duronto"), ("12969","Jaipur SF"),
-    ("16588","Rani Chennamma"), ("12649","Karnataka Sampark"), ("19301","Indrail Pass"),
 ]
 
 STATIONS = [
-    ("NDLS","New Delhi"), ("MMCT","Mumbai Central"), ("HWH","Howrah Jn"),
-    ("MAS","Chennai Central"), ("SBC","Bengaluru City"), ("PUNE","Pune Jn"),
-    ("ADI","Ahmedabad"), ("JP","Jaipur"), ("LKO","Lucknow NR"),
-    ("PNBE","Patna Jn"), ("BPL","Bhopal Jn"), ("NGP","Nagpur"),
-    ("SC","Secunderabad"), ("ERS","Ernakulam Jn"), ("GHY","Guwahati"),
-    ("BSB","Varanasi Jn"), ("VSKP","Visakhapatnam"), ("BBS","Bhubaneswar"),
-    ("UDZ","Udaipur City"), ("JAT","Jammu Tawi"), ("UHL","Ambala Cant"),
-    ("AGC","Agra Cant"), ("CNB","Kanpur Central"), ("ALD","Prayagraj Jn"),
+    {"code":"NDLS","name":"New Delhi","lat":28.6430,"lng":77.2185},
+    {"code":"MMCT","name":"Mumbai Central","lat":18.9696,"lng":72.8194},
+    {"code":"HWH","name":"Howrah Jn","lat":22.5841,"lng":88.3435},
+    {"code":"MAS","name":"Chennai Central","lat":13.0827,"lng":80.2707},
+    {"code":"SBC","name":"Bengaluru City","lat":12.9784,"lng":77.5684},
+    {"code":"PUNE","name":"Pune Jn","lat":18.5284,"lng":73.8743},
+    {"code":"ADI","name":"Ahmedabad","lat":23.0256,"lng":72.5977},
+    {"code":"JP","name":"Jaipur","lat":26.9196,"lng":75.7878},
+    {"code":"LKO","name":"Lucknow NR","lat":26.8329,"lng":80.9205},
+    {"code":"PNBE","name":"Patna Jn","lat":25.6022,"lng":85.1376},
+    {"code":"BPL","name":"Bhopal Jn","lat":23.2647,"lng":77.4116},
+    {"code":"NGP","name":"Nagpur","lat":21.1472,"lng":79.0881},
+    {"code":"SC","name":"Secunderabad","lat":17.4337,"lng":78.5016},
+    {"code":"ERS","name":"Ernakulam Jn","lat":9.9658,"lng":76.2929},
+    {"code":"GHY","name":"Guwahati","lat":26.1820,"lng":91.7515},
 ]
 
 RISK_FACTORS = [
@@ -65,7 +71,6 @@ RISK_FACTORS = [
 ]
 
 ZONES = ["NR","CR","WR","SR","ER","SER","NER","SCR","NFR","ECR"]
-
 zone_counts: Dict[str, Dict] = {z: {"critical":0,"high":0,"medium":0,"low":0,"total":0} for z in ZONES}
 
 def rand_vals():
@@ -85,10 +90,16 @@ def make_alert() -> Dict:
     zone = random.choice(ZONES)
     zone_counts[zone][severity.lower()] += 1
     zone_counts[zone]["total"] += 1
+    
+    # Randomize coordinates slightly around the station to show movement
+    lat = station["lat"] + random.uniform(-0.02, 0.02)
+    lng = station["lng"] + random.uniform(-0.02, 0.02)
+    
     return {
         "id": f"ALT-{uuid.uuid4().hex[:6].upper()}",
         "train_id": train[0], "train_name": train[1],
-        "station_code": station[0], "station_name": station[1],
+        "station_code": station["code"], "station_name": station["name"],
+        "lat": lat, "lng": lng,
         "severity": severity, "risk_score": round(risk_score, 1),
         "methods_agreeing": methods, "zone": zone,
         "bayesian_risk": round(random.uniform(0.5,0.99) if severity in ["CRITICAL","HIGH"] else random.uniform(0.2,0.6), 3),
@@ -129,17 +140,12 @@ async def streaming_loop():
 @app.on_event("startup")
 async def startup():
     asyncio.create_task(streaming_loop())
-    logger.info("[DRISHTI v4.0] Streaming engine started")
+    logger.info("[DRISHTI v5.0] Streaming engine started")
 
-# ── Routes ────────────────────────────────────────────────────────────────────
-@app.get("/", response_class=HTMLResponse)
-async def dashboard():
-    html_path = Path(__file__).parent / "dashboard.html"
-    return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
-
-@app.get("/health")
+# ── API Routes ────────────────────────────────────────────────────────────────
+@app.get("/api/health")
 async def health():
-    return {"status":"online","service":"DRISHTI v4.0",
+    return {"status":"online","service":"DRISHTI API v5.0",
             "timestamp":datetime.now().isoformat(),
             "connections":len(active_connections),"buffer":len(alert_buffer)}
 
@@ -163,6 +169,31 @@ async def train_risk(train_id: str):
     return {"train_id":train_id,"risk_level":latest["severity"],
             "risk_score":latest["risk_score"],"alert_count":len(alerts),"last_alert":latest}
 
+@app.get("/api/models/explainability")
+async def get_models_explainability():
+    """Mock endpoint to provide data for the /models page visualization"""
+    return {
+        "bayesian": {
+            "p_accident_given_signal_pass": 0.88,
+            "p_accident_given_speeding": 0.72,
+            "nodes": [
+                {"id": "signal", "value": "RED"},
+                {"id": "speed", "value": "110km/h"},
+                {"id": "visibility", "value": "FOG (20m)"},
+                {"id": "collision_risk", "value": "HIGH"}
+            ]
+        },
+        "isolation_forest": {
+            "threshold": 0.5,
+            "anomalies_detected": 420,
+            "normal_samples": 49000
+        },
+        "causal_dag": {
+            "root_cause": "Delayed maintenance",
+            "impact_chain": ["Signal Failure", "Driver Miscommunication", "Brake Over-reliance"]
+        }
+    }
+
 @app.websocket("/ws/live")
 async def ws_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -181,6 +212,26 @@ async def ws_endpoint(websocket: WebSocket):
     finally:
         try: active_connections.remove(websocket)
         except: pass
+
+# ── Frontend Static Serving ───────────────────────────────────────────────────
+FRONTEND_DIR = Path(__file__).parent.parent.parent / "frontend" / "dist"
+
+# Check if dist exists, otherwise create a mock one so FastAPI doesn't crash before build
+# (During deployment Render runs npm run build before uvicorn, so it's fine)
+if not FRONTEND_DIR.exists():
+    os.makedirs(FRONTEND_DIR, exist_ok=True)
+    with open(FRONTEND_DIR / "index.html", "w") as f:
+        f.write("<html><body>Building frontend...</body></html>")
+
+app.mount("/assets", StaticFiles(directory=FRONTEND_DIR / "assets", html=True), name="assets")
+
+@app.get("/{full_path:path}")
+async def serve_react_app(full_path: str):
+    """Fallback route to serve React's index.html for client-side routing"""
+    file_path = FRONTEND_DIR / full_path
+    if file_path.is_file():
+        return FileResponse(file_path)
+    return FileResponse(FRONTEND_DIR / "index.html")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
