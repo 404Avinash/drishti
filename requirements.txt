@@ -12,6 +12,8 @@ pgmpy==0.1.20
 redis==5.0.0
 requests==2.31.0
 
+# Security & ML
+cryptography==41.0.3
 # APIs & async
 fastapi==0.100.0
 uvicorn[standard]==0.23.2
