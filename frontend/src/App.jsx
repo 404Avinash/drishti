@@ -4,7 +4,7 @@ import {
   Activity, ShieldAlert, Bell, ChevronRight,
   Terminal, Globe, AlertTriangle, X, Cpu
 } from 'lucide-react'
-import Dashboard from './pages/Dashboard'
+import NetworkPulse from './pages/Network'
 import NetworkMap from './pages/Map'
 import Models from './pages/Models'
 import TrainDetail from './pages/TrainDetail'
@@ -123,7 +123,7 @@ export default function App() {
   const clearUnread = () => setUnread(0)
 
   const navs = [
-    { to: '/', icon: <Activity size={15} />, label: 'Live Dashboard', exact: true, badge: stats.critical },
+    { to: '/', icon: <Activity size={15} />, label: 'Network Pulse', exact: true, badge: stats.critical },
     { to: '/map', icon: <Globe size={15} />, label: 'Network Map', badge: 0 },
     { to: '/alerts', icon: <Bell size={15} />, label: 'Alerts', badge: unread },
     { to: '/models', icon: <Cpu size={15} />, label: 'AI Models', badge: 0 },
@@ -221,7 +221,7 @@ export default function App() {
             <span style={{ color: 'var(--t3)' }}>DRISHTI</span>
             <ChevronRight size={12} color="var(--t4)" />
             <span style={{ color: 'var(--t1)', fontWeight: 600 }}>
-              {loc.pathname === '/' ? 'Live Dashboard' :
+              {loc.pathname === '/' ? 'Network Intelligence Pulse' :
                loc.pathname.startsWith('/map') ? 'Network Map' :
                loc.pathname.startsWith('/alerts') ? 'Alerts Feed' :
                loc.pathname.startsWith('/models') ? 'AI Models' :
@@ -304,7 +304,7 @@ export default function App() {
         {/* Page */}
         <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
           <Routes>
-            <Route path="/"         element={<Dashboard stats={stats} />} />
+            <Route path="/"         element={<NetworkPulse />} />
             <Route path="/map"      element={<NetworkMap />} />
             <Route path="/alerts"   element={<Alerts />} />
             <Route path="/models"   element={<Models />} />

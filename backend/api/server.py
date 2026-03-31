@@ -8,6 +8,17 @@ from datetime import datetime
 from typing import List, Optional, Dict
 from pathlib import Path
 
+try:
+    from backend.network.cascade import CascadeEngine
+except ImportError:
+    CascadeEngine = None
+
+from backend.api.observability import (
+    metrics_router, ALERTS_PROCESSED, WS_MESSAGES_SENT, 
+    ACTIVE_CONNECTIONS, CASCADING_NODES
+)
+from backend.api.state import grid
+
 from fastapi import FastAPI, WebSocket, Query, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,6 +33,8 @@ app = FastAPI(title="DRISHTI API", description="Railway Accident Prevention Syst
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True,
                    allow_methods=["*"], allow_headers=["*"])
 
+app.include_router(metrics_router)
+
 # ── Global State ──────────────────────────────────────────────────────────────
 active_connections: List[WebSocket] = []
 alert_buffer: List[Dict] = []
@@ -30,6 +43,7 @@ stats = {
     "trains_monitored": 2041, "batches_processed": 0,
     "uptime_start": datetime.now().isoformat()
 }
+cascade_engine = None
 
 # ── Indian Railways Data (With Coordinates) ───────────────────────────────────
 TRAINS = [
@@ -111,20 +125,38 @@ def make_alert() -> Dict:
 
 async def broadcast(msg: Dict):
     dead = []
+    WS_MESSAGES_SENT.inc(len(active_connections))
     for ws in active_connections:
         try: await ws.send_json(msg)
         except: dead.append(ws)
     for ws in dead:
         try: active_connections.remove(ws)
         except: pass
+    ACTIVE_CONNECTIONS.set(len(active_connections))
 
 async def streaming_loop():
     await asyncio.sleep(2)
     while True:
         try:
+            # 1. Step the network propagation engine (live structural stress)
+            if cascade_engine:
+                cascade_engine.step_simulation()
+                state = cascade_engine.get_state()
+                # Update Observability
+                stressed_nodes = sum(1 for n in state["nodes"] if n["stress_level"] in ["HIGH", "CRITICAL"])
+                CASCADING_NODES.set(stressed_nodes)
+                # Persist to grid memory
+                if grid.connected:
+                    grid.cache_network_state(state)
+                    grid.publish_pulse(state)
+                # Broadcast the network pulse over websocket
+                await broadcast({"type": "network_pulse", "data": state})
+            
+            # 2. Backwards compatibility for exact train tracking (Layer 2)
             n = random.choices([1,2,3], weights=[60,30,10])[0]
             for _ in range(n):
                 alert = make_alert()
+                ALERTS_PROCESSED.inc()
                 stats["total"] += 1
                 stats[alert["severity"].lower()] += 1
                 stats["batches_processed"] += 1
@@ -132,22 +164,32 @@ async def streaming_loop():
                 if len(alert_buffer) > 300: alert_buffer.pop(0)
                 await broadcast({"type":"alert","data":alert,"stats":{**stats}})
                 await asyncio.sleep(0.2)
-            await asyncio.sleep(random.uniform(4,10))
+                
+            await asyncio.sleep(random.uniform(3, 8))
         except Exception as e:
             logger.error(f"Streaming error: {e}")
             await asyncio.sleep(5)
 
 @app.on_event("startup")
 async def startup():
+    global cascade_engine
+    if CascadeEngine:
+        cascade_engine = CascadeEngine()
     asyncio.create_task(streaming_loop())
-    logger.info("[DRISHTI v5.0] Streaming engine started")
+    logger.info("[DRISHTI NERC CORE] Streaming engine + Cascade model started")
 
 # ── API Routes ────────────────────────────────────────────────────────────────
 @app.get("/api/health")
 async def health():
-    return {"status":"online","service":"DRISHTI API v5.0",
+    return {"status":"online","service":"DRISHTI NERC v1.0",
             "timestamp":datetime.now().isoformat(),
             "connections":len(active_connections),"buffer":len(alert_buffer)}
+
+@app.get("/api/network/pulse")
+async def network_pulse():
+    if not cascade_engine:
+        return {"error": "Cascade Engine offline or uninitialized"}
+    return cascade_engine.get_state()
 
 @app.get("/api/stats")
 async def get_stats():
@@ -198,10 +240,14 @@ async def get_models_explainability():
 async def ws_endpoint(websocket: WebSocket):
     await websocket.accept()
     active_connections.append(websocket)
+    ACTIVE_CONNECTIONS.set(len(active_connections))
     try:
+        # Load from Grid if connected
+        init_state = grid.fetch_latest_state() if grid.connected else None
         await websocket.send_json({
             "type":"init","stats":{**stats},
-            "recent_alerts":list(reversed(alert_buffer[-30:])),"zones":zone_counts
+            "recent_alerts":list(reversed(alert_buffer[-30:])),"zones":zone_counts,
+            "network_pulse":init_state
         })
         while True:
             try: await asyncio.wait_for(websocket.receive_text(), timeout=30)
@@ -212,6 +258,7 @@ async def ws_endpoint(websocket: WebSocket):
     finally:
         try: active_connections.remove(websocket)
         except: pass
+        ACTIVE_CONNECTIONS.set(len(active_connections))
 
 # ── Frontend Static Serving ───────────────────────────────────────────────────
 FRONTEND_DIR = Path(__file__).parent.parent.parent / "frontend" / "dist"
