@@ -45,11 +45,8 @@ services:
   - type: web
     name: drishti-frontend
     runtime: static
-    rootDir: frontend
-    buildCommand: |
-      npm install
-      npm run build
-    staticPublishPath: ./dist
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: ./frontend/dist
     headers:
       - path: /assets/*
         name: Cache-Control
