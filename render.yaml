@@ -47,7 +47,7 @@ services:
     runtime: static
     buildCommand: |
       cd frontend
-      npm ci
+      npm install
       npm run build
     staticPublishPath: ./frontend/dist
     headers:
@@ -68,11 +68,11 @@ services:
         source: /*
         destination: /index.html
 
-  # ── Redis / Key Value Cache ───────────────────────────────────────────────────
+  # ── Redis (Key-Value Cache) ───────────────────────────────────────────────────
   - type: keyvalue
     name: drishti-redis
     plan: free
     maxmemoryPolicy: allkeys-lru
     ipAllowList:
       - source: 0.0.0.0/0
-        description: Allow all Render internal services
+        description: Allow all (Render internal services)
