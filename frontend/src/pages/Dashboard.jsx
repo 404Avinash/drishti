@@ -66,7 +66,7 @@ export default function Dashboard({ stats }) {
   const feedRef = useRef(null)
 
   useEffect(() => {
-    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:8000/ws/live`
+    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/live`
     const ws = new WebSocket(wsUrl)
 
     ws.onmessage = (e) => {

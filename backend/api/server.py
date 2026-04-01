@@ -47,6 +47,8 @@ from backend.security.auth import (
     verify_password,
 )
 from backend.ml.runtime import Phase3MLRuntime
+from backend.ml.model_loader import model_loader
+from backend.ml.drift_retraining import drift_retrainer
 
 # ── Cascade Engine (Layers 2 + 3) ────────────────────────────────────────────
 try:
@@ -128,6 +130,8 @@ def _metric_set(metric, value: float) -> None:
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     global cascade_engine
+    
+    # Apply database migrations
     applied = run_migrations()
     if applied:
         logger.info("[DB] Applied migrations: %s", ", ".join(applied))
@@ -137,16 +141,41 @@ async def lifespan(application: FastAPI):
     if _cascade_available and CascadeEngine:
         cascade_engine = CascadeEngine()
         logger.info("[DRISHTI] CascadeEngine started")
+    
+    # Load ML models on startup
+    logger.info("[ML] Loading persistent ML models...")
+    try:
+        model_loader.load_or_train_isolation_forest()
+        logger.info("[ML] ✅ ML models loaded successfully")
+    except Exception as e:
+        logger.error(f"[ML] ❌ Failed to load models: {e}")
+    
+    # Start drift monitoring background task
+    logger.info("[ML] Starting drift monitoring background task...")
+    drift_monitor_task = asyncio.create_task(drift_retrainer.monitor_and_retrain_loop())
+    logger.info("[ML] ✅ Drift monitor started")
+    
+    # Start streaming engine
     asyncio.create_task(streaming_loop())
     asyncio.create_task(redis_telemetry_loop())
     logger.info("[DRISHTI v7.0] Streaming engine live — India's NERC is online")
+    
     yield
+    
     # Shutdown cleanup
+    drift_monitor_task.cancel()
+    try:
+        await drift_monitor_task
+    except asyncio.CancelledError:
+        pass
+    
     for ws in list(active_connections):
         try:
             await ws.close()
         except Exception:
             pass
+    
+    logger.info("[DRISHTI] Graceful shutdown complete")
 
 
 # ── App Setup ─────────────────────────────────────────────────────────────────

@@ -90,7 +90,7 @@ export default function App() {
   const dismiss = useCallback(id => setToasts(prev => prev.filter(t => t.id !== id)), [])
 
   useEffect(() => {
-    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:8000/ws/live`
+    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/live`
     let ws, retryTimer
 
     function connect() {

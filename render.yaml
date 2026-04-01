@@ -45,8 +45,9 @@ services:
   - type: web
     name: drishti-frontend
     runtime: static
-    buildCommand: npm run build
-    staticPublishPath: frontend/dist
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
     envVars:
       - key: NODE_VERSION
         value: "20.11.0"

@@ -11,6 +11,9 @@ from typing import Any
 
 from backend.data.crs_parser import CRSParser
 from backend.data.ntes_connector import NTESConnector
+from backend.data.crs_loader import CRSLoader
+from backend.data.ntes_live import NTESLiveConnector
+from backend.data.cleaning import DataCleaner
 
 
 @dataclass
@@ -49,10 +52,19 @@ class Phase1IngestionPipeline:
         return datetime.now(timezone.utc).isoformat()
 
     async def ingest_ntes_once(self) -> IngestionResult:
-        """Poll NTES once and validate all train states."""
-        trains = await self.ntes_connector.poll_ntes()
-        valid = sum(1 for t in trains if self.ntes_connector.validate_train_state(t))
+        """Poll NTES once with LIVE connector (production data)."""
+        live_connector = NTESLiveConnector()
+        trains = await live_connector.fetch_live_trains()
+        
+        # Validate all train states
+        valid = 0
+        for train in trains:
+            if await live_connector.validate_train_state(train):
+                valid += 1
+        
         received = len(trains)
+        await live_connector.close()
+        
         return IngestionResult(
             source="ntes",
             timestamp_utc=self._now_utc_iso(),
@@ -61,7 +73,35 @@ class Phase1IngestionPipeline:
             records_invalid=received - valid,
         )
 
-    def ingest_crs_once(self) -> IngestionResult:
+    async def _ingest_crs_cleaned(self) -> IngestionResult:
+        """Load CRS with full cleaning and quality pipeline."""
+        loader = CRSLoader()
+        cleaner = DataCleaner()
+        
+        # Load raw records from corpus
+        records = loader.load()
+        received = len(records)
+        
+        # Apply full cleaning pipeline
+        # 1. Deduplicate
+        records = cleaner.deduplicate_accidents(records)
+        
+        # 2. Normalize timestamps
+        records = cleaner.normalize_timestamps(records)
+        
+        # 3. Impute missing values
+        records = [cleaner.impute_weather(r) for r in records]
+        records = [cleaner.impute_time_of_day(r) for r in records]
+        
+        valid = len(records)
+        
+        return IngestionResult(
+            source="crs_cleaned",
+            timestamp_utc=self._now_utc_iso(),
+            records_received=received,
+            records_valid=valid,
+            records_invalid=max(0, received - valid),
+        )
         """Load and validate CRS corpus records once."""
         records = self.crs_parser.get_corpus()
         valid = sum(1 for r in records if self.crs_parser.validate_record(r))
@@ -78,7 +118,7 @@ class Phase1IngestionPipeline:
         """Run one ingestion cycle for all Phase 1 sources."""
         ntes_result, crs_result = await asyncio.gather(
             self.ingest_ntes_once(),
-            asyncio.to_thread(self.ingest_crs_once),
+            self._ingest_crs_cleaned(),
         )
 
         return {

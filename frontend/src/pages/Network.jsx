@@ -303,7 +303,7 @@ export default function NetworkPulse() {
   // Subscribe to live pulse (Layer 2 + 3 intelligence overlay)
   useEffect(() => {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${proto}//${window.location.hostname}:8000/ws/live`
+    const wsUrl = `${proto}//${window.location.host}/ws/live`
     const ws = new WebSocket(wsUrl)
 
     ws.onmessage = (e) => {

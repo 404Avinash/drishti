@@ -155,7 +155,7 @@ export default function NetworkMap() {
   // Subscribe to live stress updates
   useEffect(() => {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${proto}//${window.location.hostname}:8000/ws/live`)
+    const ws = new WebSocket(`${proto}//${window.location.host}/ws/live`)
 
     ws.onmessage = e => {
       const msg = JSON.parse(e.data)
