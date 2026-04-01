@@ -1,26 +1,33 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# DRISHTI — CD Pipeline (Deploy on merge to main)
-# Target: Render.com (free tier → production)
-# Also handles: Docker Hub push, release tagging
+# DRISHTI — DARPA-Level Enterprise CD Pipeline
+# Targets: AWS ECS (staging) → AWS ECS (production) with blue-green deployment
+# Features: Security scanning, load testing, automated rollback, disaster recovery
 # ─────────────────────────────────────────────────────────────────────────────
 
-name: Deploy
+name: 🚀 Enterprise Deploy
 
 on:
   push:
-    branches: [main]
+    branches: [master, develop]
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       environment:
         description: 'Target environment'
         required: true
-        default: 'production'
+        default: 'staging'
         type: choice
-        options: [production, staging]
+        options: [staging, production]
       skip_tests:
-        description: 'Skip tests (emergency deploy only)'
+        description: 'Skip tests (emergency only)'
         required: false
         default: false
+        type: boolean
+      canary:
+        description: 'Deploy as canary (5% traffic)'
+        required: false
+        default: true
         type: boolean
 
 # Only one deploy at a time
