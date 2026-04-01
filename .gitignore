@@ -62,6 +62,10 @@ htmlcov/
 .env
 .env.local
 
+# Local databases
+*.db
+*.sqlite
+
 # Demo/test outputs
 test_*.jsonl
 demo_*.jsonl

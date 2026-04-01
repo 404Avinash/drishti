@@ -10,14 +10,43 @@ import random
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, Query, HTTPException
+from fastapi import FastAPI, WebSocket, Query, HTTPException, Depends, Request, status
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import uvicorn
+from sqlalchemy.orm import Session
+
+from backend.api.schemas import (
+    AnomalyScoreRequest,
+    BayesianInferRequest,
+    DriftObserveRequest,
+    ExplainRequest,
+    ForecastRequest,
+    LoginRequest,
+    RegisterRequest,
+    TrainIsolationRequest,
+    TokenResponse,
+    sanitize_text,
+)
+from backend.core.audit import AuditRecord, write_audit_event
+from backend.core.errors import AppError, register_error_handlers
+from backend.core.tracing import tracing_middleware
+from backend.db.migrations import applied_versions, run_migrations
+from backend.db.models import AuditEvent, User
+from backend.db.session import get_db
+from backend.security.auth import (
+    create_access_token,
+    get_current_user,
+    get_token_payload_optional,
+    hash_password,
+    require_roles,
+    verify_password,
+)
+from backend.ml.runtime import Phase3MLRuntime
 
 # ── Cascade Engine (Layers 2 + 3) ────────────────────────────────────────────
 try:
@@ -48,6 +77,10 @@ try:
     _obs_available = True
 except Exception as e:
     metrics_router = None
+    ALERTS_PROCESSED = None
+    WS_MESSAGES_SENT = None
+    ACTIVE_CONNECTIONS = None
+    CASCADING_NODES = None
     _obs_available = False
 
 # ── Redis Grid ────────────────────────────────────────────────────────────────
@@ -77,13 +110,30 @@ except Exception as e:
 # ── Global state ──────────────────────────────────────────────────────────────
 active_connections: List[WebSocket] = []
 alert_buffer: List[Dict] = []
-cascade_engine: Optional["CascadeEngine"] = None
+cascade_engine: Optional[Any] = None
+ml_runtime = Phase3MLRuntime()
+
+
+def _metric_inc(metric) -> None:
+    if metric is not None and hasattr(metric, "inc"):
+        metric.inc()
+
+
+def _metric_set(metric, value: float) -> None:
+    if metric is not None and hasattr(metric, "set"):
+        metric.set(value)
 
 
 # ── Lifespan (replaces deprecated @app.on_event) ─────────────────────────────
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     global cascade_engine
+    applied = run_migrations()
+    if applied:
+        logger.info("[DB] Applied migrations: %s", ", ".join(applied))
+    else:
+        logger.info("[DB] No pending migrations")
+
     if _cascade_available and CascadeEngine:
         cascade_engine = CascadeEngine()
         logger.info("[DRISHTI] CascadeEngine started")
@@ -114,6 +164,36 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+register_error_handlers(app)
+app.middleware("http")(tracing_middleware)
+
+
+@app.middleware("http")
+async def audit_middleware(request: Request, call_next):
+    response = await call_next(request)
+
+    payload = get_token_payload_optional(request)
+    actor = payload.get("sub", "anonymous") if payload else "anonymous"
+    trace_id = getattr(request.state, "trace_id", "unknown")
+    duration_ms = getattr(request.state, "duration_ms", None)
+
+    write_audit_event(
+        AuditRecord(
+            trace_id=trace_id,
+            actor=actor,
+            action=request.method,
+            resource=request.url.path,
+            status_code=response.status_code,
+            details={
+                "query": str(request.url.query),
+                "client": request.client.host if request.client else "unknown",
+                "user_agent": request.headers.get("user-agent", ""),
+                "duration_ms": duration_ms,
+            },
+        )
+    )
+    return response
 
 if metrics_router:
     app.include_router(metrics_router)
@@ -255,8 +335,11 @@ def _make_alert() -> Dict:
                 methods_voting=methods,
                 actions=actions,
             )
-            data = signed.to_dict()
-            data["id"] = data.get("alert_id", str(random.randint(100000, 999999)))
+            if signed is not None and hasattr(signed, "to_dict"):
+                data = signed.to_dict()
+                data["id"] = data.get("alert_id", str(random.randint(100000, 999999)))
+            else:
+                data = {}
         except Exception:
             data = {}
     else:
@@ -310,7 +393,7 @@ async def broadcast(msg: Dict):
         try:
             await ws.send_json(msg)
             if _obs_available:
-                WS_MESSAGES_SENT.inc()
+                _metric_inc(WS_MESSAGES_SENT)
         except Exception:
             dead.append(ws)
     for ws in dead:
@@ -319,7 +402,7 @@ async def broadcast(msg: Dict):
         except ValueError:
             pass
     if _obs_available:
-        ACTIVE_CONNECTIONS.set(len(active_connections))
+        _metric_set(ACTIVE_CONNECTIONS, len(active_connections))
 
 
 # ── Background streaming loop ─────────────────────────────────────────────────
@@ -338,7 +421,7 @@ async def streaming_loop():
                         1 for n in state["nodes"]
                         if n["stress_level"] in ("HIGH", "CRITICAL")
                     )
-                    CASCADING_NODES.set(stressed)
+                    _metric_set(CASCADING_NODES, stressed)
 
                 # Persist to Redis grid if available
                 if grid and _redis_available:
@@ -355,7 +438,7 @@ async def streaming_loop():
             for _ in range(n_alerts):
                 alert = _make_alert()
                 if _obs_available:
-                    ALERTS_PROCESSED.inc()
+                    _metric_inc(ALERTS_PROCESSED)
 
                 stats["total"] += 1
                 stats[alert["severity"].lower()] += 1
@@ -427,6 +510,147 @@ async def get_stats():
     }
 
 
+@app.post("/api/auth/register", response_model=TokenResponse)
+async def register_user(payload: RegisterRequest, db: Session = Depends(get_db)):
+    existing = db.query(User).filter(User.username == payload.username).first()
+    if existing:
+        raise AppError(code="USER_EXISTS", message="Username already exists", status_code=409)
+
+    role = payload.role.lower()
+    if role not in {"admin", "operator", "viewer"}:
+        raise AppError(code="INVALID_ROLE", message="Role must be admin/operator/viewer", status_code=400)
+
+    user = User(
+        username=payload.username,
+        password_hash=hash_password(payload.password),
+        role=role,
+        is_active=True,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    token = create_access_token(user)
+    return TokenResponse(access_token=token, username=user.username, role=user.role)
+
+
+@app.post("/api/auth/login", response_model=TokenResponse)
+async def login_user(payload: LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == payload.username).first()
+    if not user or not verify_password(payload.password, user.password_hash):
+        raise AppError(code="AUTH_INVALID_CREDENTIALS", message="Invalid credentials", status_code=401)
+    if not user.is_active:
+        raise AppError(code="AUTH_USER_DISABLED", message="User is disabled", status_code=403)
+
+    token = create_access_token(user)
+    return TokenResponse(access_token=token, username=user.username, role=user.role)
+
+
+@app.get("/api/auth/me")
+async def auth_me(user: User = Depends(get_current_user)):
+    return {
+        "id": user.id,
+        "username": user.username,
+        "role": user.role,
+        "is_active": user.is_active,
+        "created_at": user.created_at.isoformat(),
+    }
+
+
+@app.get("/api/admin/migrations")
+async def migration_status(_: User = Depends(require_roles("admin"))):
+    return {"applied_versions": sorted(applied_versions())}
+
+
+@app.get("/api/admin/audit")
+async def read_audit_log(
+    limit: int = Query(100, ge=1, le=500),
+    actor: Optional[str] = Query(None),
+    _: User = Depends(require_roles("admin", "operator")),
+    db: Session = Depends(get_db),
+):
+    query = db.query(AuditEvent).order_by(AuditEvent.id.desc())
+    if actor:
+        query = query.filter(AuditEvent.actor == sanitize_text(actor))
+    rows = query.limit(limit).all()
+    return {
+        "count": len(rows),
+        "events": [
+            {
+                "id": r.id,
+                "trace_id": r.trace_id,
+                "actor": r.actor,
+                "action": r.action,
+                "resource": r.resource,
+                "status_code": r.status_code,
+                "details": r.details,
+                "created_at": r.created_at.isoformat(),
+            }
+            for r in rows
+        ],
+    }
+
+
+@app.post("/api/ml/train/isolation-forest")
+async def train_isolation_forest(
+    payload: TrainIsolationRequest,
+    _: User = Depends(require_roles("admin", "operator")),
+):
+    try:
+        return ml_runtime.train_isolation_forest(payload.rows)
+    except ValueError as exc:
+        raise AppError(code="ML_TRAINING_INVALID_INPUT", message=str(exc), status_code=422)
+
+
+@app.post("/api/ml/anomaly/score")
+async def score_anomaly(payload: AnomalyScoreRequest, _: User = Depends(require_roles("admin", "operator", "viewer"))):
+    try:
+        return ml_runtime.score_anomaly(payload.train_id, payload.features, payload.all_trains)
+    except ValueError as exc:
+        raise AppError(code="ML_ANOMALY_INVALID_INPUT", message=str(exc), status_code=422)
+
+
+@app.post("/api/ml/forecast")
+async def forecast(payload: ForecastRequest, _: User = Depends(require_roles("admin", "operator", "viewer"))):
+    try:
+        return ml_runtime.forecast_series(payload.series, payload.horizon, payload.method)
+    except ValueError as exc:
+        raise AppError(code="ML_FORECAST_INVALID_INPUT", message=str(exc), status_code=422)
+
+
+@app.post("/api/ml/explain")
+async def explain(payload: ExplainRequest, _: User = Depends(require_roles("admin", "operator", "viewer"))):
+    try:
+        return ml_runtime.explain_prediction(
+            model_type=payload.model_type,
+            feature_names=payload.feature_names,
+            train_matrix=payload.train_matrix,
+            row=payload.row,
+        )
+    except ValueError as exc:
+        raise AppError(code="ML_EXPLAIN_INVALID_INPUT", message=str(exc), status_code=422)
+
+
+@app.post("/api/ml/drift/observe", status_code=status.HTTP_202_ACCEPTED)
+async def drift_observe(payload: DriftObserveRequest, _: User = Depends(require_roles("admin", "operator"))):
+    ml_runtime.observe_for_drift(payload.features, payload.prediction)
+    return {"accepted": True}
+
+
+@app.get("/api/ml/drift/report")
+async def drift_report(_: User = Depends(require_roles("admin", "operator", "viewer"))):
+    return ml_runtime.drift_report()
+
+
+@app.get("/api/ml/models/versions")
+async def model_versions(
+    model_name: Optional[str] = Query(None),
+    _: User = Depends(require_roles("admin", "operator", "viewer")),
+):
+    safe_name = sanitize_text(model_name) if model_name else None
+    return {"versions": ml_runtime.list_model_versions(model_name=safe_name)}
+
+
 @app.get("/api/network/pulse")
 async def network_pulse():
     """Current full network state from CascadeEngine."""
@@ -447,10 +671,12 @@ async def network_nodes(
     state = cascade_engine.get_state()
     nodes = state["nodes"]
     if zone:
-        nodes = [n for n in nodes if n.get("zone", "").upper() == zone.upper()]
+        safe_zone = sanitize_text(zone).upper()
+        nodes = [n for n in nodes if n.get("zone", "").upper() == safe_zone]
     if min_stress:
+        safe_min_stress = sanitize_text(min_stress).upper()
         level_order = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
-        min_level = level_order.get(min_stress.upper(), 0)
+        min_level = level_order.get(safe_min_stress, 0)
         nodes = [n for n in nodes if level_order.get(n.get("stress_level", "LOW"), 0) >= min_level]
     nodes.sort(key=lambda n: n.get("centrality", 0), reverse=True)
     return {"nodes": nodes[:limit], "total": len(nodes)}
@@ -461,7 +687,8 @@ async def cascade_forecast(station_code: str):
     """Cascade forecast: if {station_code} is delayed, what happens downstream?"""
     if not cascade_engine:
         raise HTTPException(status_code=503, detail="CascadeEngine offline")
-    forecast = cascade_engine.get_cascade_forecast(station_code.upper())
+    safe_station = sanitize_text(station_code).upper()
+    forecast = cascade_engine.get_cascade_forecast(safe_station)
     if not forecast:
         raise HTTPException(status_code=404, detail=f"Station {station_code} not found in network")
     return forecast
@@ -487,9 +714,11 @@ async def history(
 ):
     items = list(reversed(alert_buffer))
     if severity:
-        items = [a for a in items if a["severity"] == severity.upper()]
+        safe_severity = sanitize_text(severity).upper()
+        items = [a for a in items if a["severity"] == safe_severity]
     if zone:
-        items = [a for a in items if a.get("zone", "").upper() == zone.upper()]
+        safe_zone = sanitize_text(zone).upper()
+        items = [a for a in items if a.get("zone", "").upper() == safe_zone]
     return {"total": len(items), "alerts": items[offset: offset + limit]}
 
 
@@ -511,7 +740,7 @@ async def train_risk(train_id: str):
 
 
 @app.post("/api/bayesian/infer")
-async def bayesian_infer(observations: Dict):
+async def bayesian_infer(observations: BayesianInferRequest):
     """
     Live Bayesian inference: POST observations, get P(accident) back.
     Body: { delay_minutes, time_of_day, signal_cycle_time, maintenance_active, centrality_rank, traffic_density }
@@ -519,8 +748,9 @@ async def bayesian_infer(observations: Dict):
     if not _bayesian_available or not _bayesian_net:
         raise HTTPException(status_code=503, detail="Bayesian network offline")
     try:
-        pred = _bayesian_net.update_belief(observations)
-        explanation = _bayesian_net.explain_prediction(pred, observations)
+        obs = observations.model_dump()
+        pred = _bayesian_net.update_belief(obs)
+        explanation = _bayesian_net.explain_prediction(pred, obs)
         return {
             "p_accident":             round(pred.p_accident, 4),
             "p_collision":            round(pred.p_collision, 4),
@@ -531,8 +761,8 @@ async def bayesian_infer(observations: Dict):
             "active_observed_factors": explanation["active_observed_factors"],
             "inferred_hidden_dangers": explanation["inferred_hidden_dangers"],
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Inference failed: {e}")
+    except Exception:
+        raise AppError(code="BAYESIAN_INFERENCE_FAILED", message="Inference failed", status_code=500)
 
 
 @app.get("/api/bayesian/scenarios")
@@ -620,7 +850,7 @@ async def ws_endpoint(websocket: WebSocket):
     await websocket.accept()
     active_connections.append(websocket)
     if _obs_available:
-        ACTIVE_CONNECTIONS.set(len(active_connections))
+        _metric_set(ACTIVE_CONNECTIONS, len(active_connections))
 
     try:
         # Send bootstrap state immediately
@@ -651,7 +881,7 @@ async def ws_endpoint(websocket: WebSocket):
         except ValueError:
             pass
         if _obs_available:
-            ACTIVE_CONNECTIONS.set(len(active_connections))
+            _metric_set(ACTIVE_CONNECTIONS, len(active_connections))
 
 
 # ── Frontend Static Serving ───────────────────────────────────────────────────

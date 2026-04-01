@@ -9,7 +9,7 @@ NTES = National Train Enquiry System (live IR data)
 
 from dataclasses import dataclass, asdict
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 import asyncio
 import json
@@ -101,7 +101,7 @@ class NTESConnector:
         ]
         
         # Add timestamps
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         for train in trains:
             train.timestamp = now
             

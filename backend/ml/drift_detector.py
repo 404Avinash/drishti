@@ -14,7 +14,7 @@ Methods:
 import logging
 from dataclasses import dataclass, asdict
 from typing import Dict, List, Optional, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import numpy as np
 import json
 from collections import deque
@@ -100,7 +100,7 @@ class DriftDetector:
         self.target_history = deque(maxlen=10000)  # Prediction scores
         self.baseline_stats = {}
         self.current_stats = {}
-        self.last_retraining_time = datetime.utcnow()
+        self.last_retraining_time = datetime.now(timezone.utc)
         
         logger.info(f"DriftDetector initialized: KS threshold={ks_threshold}, baseline={baseline_window_hours}h")
     
@@ -150,7 +150,7 @@ class DriftDetector:
         
         return float(ks_stat), float(p_value)
     
-    def _get_feature_stats(self, feature_values: List[float]) -> FeatureStats:
+    def _get_feature_stats(self, feature_values: List[float]) -> Optional[FeatureStats]:
         """Compute distribution statistics"""
         if not feature_values:
             return None
@@ -177,7 +177,7 @@ class DriftDetector:
         """
         alerts = []
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         baseline_cutoff = now - timedelta(hours=self.baseline_window_hours)
         current_cutoff = now - timedelta(hours=self.detection_window_hours)
         
@@ -199,6 +199,8 @@ class DriftDetector:
             if ks_stat > self.ks_threshold and p_val < 0.05:
                 baseline_stats = self._get_feature_stats(baseline_data)
                 current_stats = self._get_feature_stats(current_data)
+                if baseline_stats is None or current_stats is None:
+                    continue
                 
                 percent_change = (current_stats.mean - baseline_stats.mean) / baseline_stats.mean * 100
                 
@@ -241,9 +243,9 @@ class DriftDetector:
         ks_stat, p_val = self._ks_test(baseline, current)
         
         if ks_stat > self.ks_threshold:
-            baseline_mean = np.mean(baseline)
-            current_mean = np.mean(current)
-            percent_change = (current_mean - baseline_mean) / baseline_mean * 100
+            baseline_mean = float(np.mean(baseline))
+            current_mean = float(np.mean(current))
+            percent_change = float((current_mean - baseline_mean) / baseline_mean * 100)
             
             severity = self._classify_severity(ks_stat, abs(percent_change))
             
@@ -257,8 +259,8 @@ class DriftDetector:
                 current_mean=current_mean,
                 percent_change=percent_change,
                 recommendation="Model predictions changed. Performance may degrade. Retrain recommended.",
-                timestamp=datetime.utcnow().isoformat(),
-                alert_id=hashlib.md5(f"target_drift-{datetime.utcnow()}".encode()).hexdigest()
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                alert_id=hashlib.md5(f"target_drift-{datetime.now(timezone.utc)}".encode()).hexdigest()
             )
             
             logger.warning(f"Target drift detected: KS={ks_stat:.3f}, predictions shifted {percent_change:.1f}%")
@@ -295,12 +297,12 @@ class DriftDetector:
                 feature_name="model_behavior",
                 ks_statistic=0.0,
                 p_value=0.0,
-                baseline_mean=np.mean(feature_stds),
-                current_mean=target_std,
-                percent_change=((target_std - np.mean(feature_stds)) / np.mean(feature_stds) * 100),
+                baseline_mean=float(np.mean(feature_stds)),
+                current_mean=float(target_std),
+                percent_change=float((target_std - np.mean(feature_stds)) / np.mean(feature_stds) * 100),
                 recommendation="Concept drift detected. Input-output relationship changed. Urgent retraining needed.",
-                timestamp=datetime.utcnow().isoformat(),
-                alert_id=hashlib.md5(f"concept_drift-{datetime.utcnow()}".encode()).hexdigest()
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                alert_id=hashlib.md5(f"concept_drift-{datetime.now(timezone.utc)}".encode()).hexdigest()
             )
             
             logger.error(f"CONCEPT DRIFT: Predictions highly variable (std={target_std:.3f})")
@@ -367,7 +369,7 @@ class DriftDetector:
             last_retraining=self.last_retraining_time.isoformat(),
             predictions_since_retrain=len(self.target_history),
             recommended_action=action,
-            timestamp=datetime.utcnow().isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat()
         )
         
         logger.info(f"Health report: {overall_health} (score={health_score}/100)")
@@ -375,7 +377,7 @@ class DriftDetector:
     
     def reset_after_retraining(self) -> None:
         """Reset drift detector after model retraining"""
-        self.last_retraining_time = datetime.utcnow()
+        self.last_retraining_time = datetime.now(timezone.utc)
         self.target_history.clear()
         logger.info("Drift detector reset after retraining")
 
