@@ -3,7 +3,6 @@ services:
   - type: web
     name: drishti-api
     runtime: python
-    region: singapore          # Closest to Indian user base
     plan: free
     
     buildCommand: |
