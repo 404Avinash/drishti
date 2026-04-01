@@ -2,8 +2,9 @@ import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom'
 import { useState, useEffect, useCallback } from 'react'
 import {
   Activity, ShieldAlert, Bell, ChevronRight,
-  Terminal, Globe, AlertTriangle, X, Cpu
+  Terminal, Globe, AlertTriangle, X, Cpu, Home
 } from 'lucide-react'
+import HomePage from './pages/Home'
 import NetworkPulse from './pages/Network'
 import NetworkMap from './pages/Map'
 import Models from './pages/Models'
@@ -89,7 +90,7 @@ export default function App() {
   const dismiss = useCallback(id => setToasts(prev => prev.filter(t => t.id !== id)), [])
 
   useEffect(() => {
-    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/live`
+    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:8000/ws/live`
     let ws, retryTimer
 
     function connect() {
@@ -123,7 +124,8 @@ export default function App() {
   const clearUnread = () => setUnread(0)
 
   const navs = [
-    { to: '/', icon: <Activity size={15} />, label: 'Network Pulse', exact: true, badge: stats.critical },
+    { to: '/home', icon: <Home size={15} />, label: 'Overview', exact: true, badge: 0 },
+    { to: '/network', icon: <Activity size={15} />, label: 'Network Pulse', exact: true, badge: stats.critical },
     { to: '/map', icon: <Globe size={15} />, label: 'Network Map', badge: 0 },
     { to: '/alerts', icon: <Bell size={15} />, label: 'Alerts', badge: unread },
     { to: '/models', icon: <Cpu size={15} />, label: 'AI Models', badge: 0 },
@@ -161,14 +163,18 @@ export default function App() {
         </div>
 
         {/* Nav group */}
+        <div style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--t4)', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 6, paddingLeft: 4 }}>Overview</div>
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 20 }}>
+          {navs.slice(0,1).map(n => <NavItem key={n.to} {...n} />)}
+        </nav>
         <div style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--t4)', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 6, paddingLeft: 4 }}>Monitor</div>
         <nav style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 20 }}>
-          {navs.slice(0,3).map(n => <NavItem key={n.to} {...n} />)}
+          {navs.slice(1,4).map(n => <NavItem key={n.to} {...n} />)}
         </nav>
 
         <div style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--t4)', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 6, paddingLeft: 4 }}>Intelligence</div>
         <nav style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          {navs.slice(3).map(n => <NavItem key={n.to} {...n} />)}
+          {navs.slice(4).map(n => <NavItem key={n.to} {...n} />)}
         </nav>
 
         {/* Spacer */}
@@ -221,10 +227,11 @@ export default function App() {
             <span style={{ color: 'var(--t3)' }}>DRISHTI</span>
             <ChevronRight size={12} color="var(--t4)" />
             <span style={{ color: 'var(--t1)', fontWeight: 600 }}>
-              {loc.pathname === '/' ? 'Network Intelligence Pulse' :
-               loc.pathname.startsWith('/map') ? 'Network Map' :
-               loc.pathname.startsWith('/alerts') ? 'Alerts Feed' :
-               loc.pathname.startsWith('/models') ? 'AI Models' :
+              {loc.pathname === '/home' || loc.pathname === '/' ? 'Overview — Why DRISHTI' :
+               loc.pathname.startsWith('/network') ? 'Network Intelligence Pulse' :
+               loc.pathname.startsWith('/map') ? 'Network Map — 51 Junction Overlay' :
+               loc.pathname.startsWith('/alerts') ? 'Live Alert Feed' :
+               loc.pathname.startsWith('/models') ? 'AI Models & Explainability' :
                loc.pathname.startsWith('/system') ? 'System Status' :
                loc.pathname.startsWith('/train') ? `Train: ${loc.pathname.split('/')[2]}` : '—'}
             </span>
@@ -304,12 +311,14 @@ export default function App() {
         {/* Page */}
         <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
           <Routes>
-            <Route path="/"         element={<NetworkPulse />} />
-            <Route path="/map"      element={<NetworkMap />} />
-            <Route path="/alerts"   element={<Alerts />} />
-            <Route path="/models"   element={<Models />} />
-            <Route path="/system"   element={<System wsStatus={wsStatus} stats={stats} />} />
-            <Route path="/train/:id" element={<TrainDetail />} />
+            <Route path="/"           element={<HomePage />} />
+            <Route path="/home"       element={<HomePage />} />
+            <Route path="/network"    element={<NetworkPulse />} />
+            <Route path="/map"        element={<NetworkMap />} />
+            <Route path="/alerts"     element={<Alerts />} />
+            <Route path="/models"     element={<Models />} />
+            <Route path="/system"     element={<System wsStatus={wsStatus} stats={stats} />} />
+            <Route path="/train/:id"  element={<TrainDetail />} />
           </Routes>
         </div>
       </div>

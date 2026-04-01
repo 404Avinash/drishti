@@ -10,6 +10,7 @@ from typing import Dict, List, Optional
 import json
 import logging
 from enum import Enum
+import numpy as np
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -301,9 +302,6 @@ class EnsembleVoter:
             "actions": alert.actions
         }
 
-
-# Import numpy for mean calculation
-import numpy as np
 
 
 # ============================================================================

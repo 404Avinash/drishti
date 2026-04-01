@@ -1,85 +1,73 @@
 """
-Bayesian Network for Real-Time Risk Propagation
+Bayesian Network for Real-Time Risk Propagation using pgmpy
 
 Models Indian Railways as a probabilistic graphical model.
-Updates beliefs every 5 minutes as NTES data arrives.
-
-This answers: P(accident | current observations) = ?
+Uses Exact Bayesian Inference (Variable Elimination) to answer: 
+P(accident | current observations) = ?
 """
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 from dataclasses import dataclass
 import logging
-import json
+from pgmpy.inference import VariableElimination
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class BayesianPrediction:
-    """Result of Bayesian inference"""
+    """Result of exact Bayesian inference"""
     p_accident: float  # Probability of accident (0-1)
     p_collision: float  # Component: collision risk
     p_derailment: float  # Component: derailment risk
-    confidence: float  # Confidence interval (0-1)
-    time_to_accident_minutes: int  # If accident likely, when?
+    confidence: float  # Confidence interval (varies by observed evidence)
+    time_to_accident_minutes: int  # Heuristic estimation of timeframe
 
 
 class BayesianRiskNetwork:
-    """Real-time Bayesian inference for accident risk"""
+    """Real-time Exact Bayesian inference for accident risk"""
     
-    def __init__(self, causal_dag, prior_base_rate: float = 0.001):
+    def __init__(self, causal_dag_builder):
         """
-        Initialize Bayesian network.
+        Initialize Bayesian network inference.
         
         Args:
-            causal_dag: CausalDAGBuilder with manual DAG
-            prior_base_rate: P(accident) before any evidence (~0.1%)
+            causal_dag_builder: Instantiated CausalDAGBuilder with pgmpy model
         """
-        self.causal_dag = causal_dag
-        self.prior = prior_base_rate
+        self.causal_dag_builder = causal_dag_builder
+        self.model = causal_dag_builder.get_pgmpy_model()
+        
+        # Use exact inference (Variable Elimination)
+        self.inference = VariableElimination(self.model)
         self.update_count = 0
         
-        logger.info(f"Initialized Bayesian network with prior={prior_base_rate}")
+        logger.info(f"Initialized pgmpy VariableElimination Bayesian network inference")
     
     def update_belief(self, observations: Dict) -> BayesianPrediction:
         """
-        Update beliefs given new evidence.
-        
-        Called every 5 minutes when NTES updates arrive.
-        
-        Args:
-            observations: {
-                'maintenance_active': bool,
-                'delay_minutes': int,
-                'signal_cycle_time': float,
-                'traffic_density': float (0-1),
-                'time_of_day': 'NIGHT' or 'DAY',
-                'centrality_rank': int (0-100),
-                'trains_bunching': bool,
-                'is_goods_train': bool,
-            }
-            
-        Returns:
-            BayesianPrediction with P(accident | observations)
+        Update beliefs given new evidence via Exact Inference.
         """
         self.update_count += 1
         
         try:
-            # Convert observations to causal state
+            # Convert observations to dictionary of known evidence (0 or 1)
             causal_state = self._observations_to_causal_state(observations)
+            evidence = {k: (1 if v else 0) for k, v in causal_state.items()}
             
-            # Compute P(accident | state) from causal DAG
-            p_accident = self.causal_dag.estimate_p_accident_given_state(causal_state)
+            # 1. Exact Inference: Query P(accident | evidence)
+            result = self.inference.query(variables=['accident'], evidence=evidence, joint=False)
             
-            # Decompose into specific accident types
-            p_collision = p_accident * 0.7  # 70% of accidents are collisions
-            p_derailment = p_accident * 0.3  # 30% are derailments
+            # Extract probability that accident = 1 (True)
+            p_accident = float(result['accident'].values[1])
             
-            # Confidence: higher when evidence is strong/clear
-            confidence = self._compute_confidence(causal_state)
+            # Decompose into specific accident types (heuristics)
+            p_collision = p_accident * 0.7  
+            p_derailment = p_accident * 0.3  
             
-            # Estimate time to accident: delays compound over next 30-60 min
+            # Confidence based on amount of known evidence vs unknown
+            confidence = self._compute_confidence(evidence)
+            
+            # Estimate time to accident
             time_to_accident = self._estimate_time_to_accident(observations)
             
             prediction = BayesianPrediction(
@@ -95,200 +83,115 @@ class BayesianRiskNetwork:
             return prediction
             
         except Exception as e:
-            logger.error(f"Bayesian update failed: {e}")
-            # Return neutral prediction on error
-            return BayesianPrediction(
-                p_accident=self.prior,
-                p_collision=self.prior * 0.7,
-                p_derailment=self.prior * 0.3,
-                confidence=0.0,
-                time_to_accident_minutes=0
-            )
+            logger.error(f"Exact Bayesian update failed: {e}")
+            return BayesianPrediction(0.001, 0.0007, 0.0003, 0.0, 0)
     
     def _observations_to_causal_state(self, obs: Dict) -> Dict:
         """
-        Convert numerical observations to discrete causal state.
-        
-        Discretization thresholds based on accident patterns.
+        Convert numerical observations to discrete causal evidence states.
+        Only returns keys for which we have direct evidence!
         """
-        
         state = {}
         
-        # Maintenance window
-        state['maintenance_skip'] = obs.get('maintenance_active', False)
-        
-        # Signal issues (proxied by cycle time anomalies)
-        signal_cycle_time = obs.get('signal_cycle_time', 4.0)
-        state['signal_failure'] = signal_cycle_time > 6.0  # >6s is anomalous
-        
-        # Delay cascade (>30 min delay is significant)
-        delay = obs.get('delay_minutes', 0)
-        state['delay_cascade'] = delay > 30
-        
-        # Train bunching (high traffic density at junction)
-        traffic_density = obs.get('traffic_density', 0.0)
-        state['train_bunching'] = traffic_density > 0.7
-        
-        # High-centrality junction (significant risk structural factor)
-        centrality_rank = obs.get('centrality_rank', 50)
-        state['high_centrality_junction'] = centrality_rank > 75
-        
-        # Night shift (22:00-05:00)
-        state['night_shift'] = obs.get('time_of_day', '') == 'NIGHT'
-        
-        # Track mismatch: infer from maintenance + signal failure + delay
-        state['track_mismatch'] = (
-            state['maintenance_skip'] and 
-            state['signal_failure']
-        )
+        if 'maintenance_active' in obs:
+            state['maintenance_skip'] = obs['maintenance_active']
+            
+        if 'signal_cycle_time' in obs:
+            state['signal_failure'] = obs.get('signal_cycle_time', 4.0) > 6.0
+            
+        if 'delay_minutes' in obs:
+            state['delay_cascade'] = obs.get('delay_minutes', 0) > 30
+            
+        if 'centrality_rank' in obs:
+            state['high_centrality_junction'] = obs.get('centrality_rank', 50) > 75
+            
+        if 'time_of_day' in obs:
+            state['night_shift'] = obs.get('time_of_day', '') == 'NIGHT'
+            
+        # We explicitly DO NOT infer track_mismatch or train_bunching here.
+        # We let the PGM mathematically infer their hidden probabilities based on the network structure!
         
         return state
     
-    def _compute_confidence(self, causal_state: Dict) -> float:
+    def _compute_confidence(self, evidence: Dict) -> float:
         """
-        Compute confidence in the prediction.
-        
-        Higher when:
-        1. Multiple independent factors agree (consensus)
-        2. Evidence is unambiguous (clear on/off values)
+        Confidence increases with the proportion of the graph we actually observe.
         """
-        # Count how many causal factors are "on"
-        active_factors = sum(1 for v in causal_state.values() if v)
-        max_factors = len(causal_state)
-        
-        # Consensus score: how much agreement?
-        consensus = active_factors / max(max_factors, 1)
-        
-        # Confidence: higher when consensus is strong
-        # (many factors aligned) or weak (mostly off)
-        confidence = max(consensus, 1.0 - consensus)
-        
-        return confidence
+        num_evidence = len(evidence)
+        total_nodes = len(self.model.nodes()) - 1  # Exclude target
+        return min(1.0, num_evidence / max(1, total_nodes))
     
     def _estimate_time_to_accident(self, obs: Dict) -> int:
-        """
-        Estimate minutes until potential accident.
-        
-        Based on:
-        - Distance to next high-centrality junction
-        - Current delay trend
-        - Traffic bunching rate
-        """
-        
-        # Default: no accident expected
-        time_to_accident = 120  # 2 hours default
-        
+        """Estimate minutes until potential accident."""
+        time_to_accident = 120  
         delay = obs.get('delay_minutes', 0)
         traffic_density = obs.get('traffic_density', 0.0)
         
-        # If high traffic density + high delay → quick convergence
         if traffic_density > 0.8 and delay > 40:
-            time_to_accident = 15  # 15 min to collision
+            time_to_accident = 15
         elif traffic_density > 0.6 and delay > 30:
-            time_to_accident = 30  # 30 min to collision
+            time_to_accident = 30
         elif delay > 40:
-            time_to_accident = 45  # 45 min buildup
-        
+            time_to_accident = 45
+            
         return max(0, time_to_accident)
     
-    def forward_simulate(self, current_obs: Dict, 
-                        horizons_minutes: List[int] = None) -> Dict[int, BayesianPrediction]:
-        """
-        Forward-simulate accident risk at future time horizons.
-        
-        Predicts how risk will evolve (delays compound, traffic builds).
-        
-        Args:
-            current_obs: Current observations
-            horizons_minutes: Time windows to predict (default: [15, 30, 60])
-            
-        Returns:
-            {
-                15: BayesianPrediction(...),
-                30: BayesianPrediction(...),
-                60: BayesianPrediction(...)
-            }
-        """
-        
-        if horizons_minutes is None:
-            horizons_minutes = [15, 30, 60]
-        
-        predictions = {}
-        
-        # Current risk
-        current_pred = self.update_belief(current_obs)
-        
-        # For each future horizon, simulate delay accumulation
-        for horizon in horizons_minutes:
-            # Simulate: delays increase over time (~1 min per 5 min of travel)
-            simulated_delay = current_obs.get('delay_minutes', 0) + (horizon // 5)
-            
-            # Simulate: traffic density increases
-            simulated_density = min(1.0, current_obs.get('traffic_density', 0) + (horizon * 0.01))
-            
-            # Create simulated observations
-            sim_obs = current_obs.copy()
-            sim_obs['delay_minutes'] = int(simulated_delay)
-            sim_obs['traffic_density'] = simulated_density
-            
-            # Predict at this horizon
-            predictions[horizon] = self.update_belief(sim_obs)
-        
-        return predictions
-    
-    def explain_prediction(self, prediction: BayesianPrediction, 
-                          observations: Dict) -> Dict:
+    def explain_prediction(self, prediction: BayesianPrediction, observations: Dict) -> Dict:
         """
         Create human-readable explanation for a prediction.
+        Identifies mathematically which hidden factors are likely active.
         """
+        state = self._observations_to_causal_state(observations)
+        evidence = {k: (1 if v else 0) for k, v in state.items()}
         
-        causal_state = self._observations_to_causal_state(observations)
-        explanation = self.causal_dag.explain_accident_risk(causal_state)
+        active_factors = [k for k, v in evidence.items() if v == 1]
         
-        risk_level = self._risk_level_text(prediction.p_accident)
+        # Marginal inference on unobserved intermediate causes
+        unobserved = [n for n in self.model.nodes() if n not in evidence and n != 'accident']
+        inferred_hidden_dangers = []
+        
+        if unobserved:
+            try:
+                marginals = self.inference.query(variables=unobserved, evidence=evidence, joint=False)
+                for node in unobserved:
+                    # If the PGM thinks this hidden node has > 50% chance of being active
+                    if marginals[node].values[1] > 0.50:
+                        inferred_hidden_dangers.append(f"{node} ({(marginals[node].values[1]*100):.1f}%)")
+            except Exception as e:
+                logger.warning(f"Secondary inference failed: {e}")
         
         return {
-            'risk_level': risk_level,
+            'risk_level': self._risk_level_text(prediction.p_accident),
             'p_accident': round(prediction.p_accident, 3),
             'confidence': round(prediction.confidence, 2),
             'time_to_accident_minutes': prediction.time_to_accident_minutes,
-            'causal_chains': explanation.get('causal_chains', []),
-            'active_factors': explanation.get('active_factors', []),
+            'active_observed_factors': active_factors,
+            'inferred_hidden_dangers': inferred_hidden_dangers,
         }
     
     def _risk_level_text(self, p_accident: float) -> str:
         """Text interpretation of risk"""
-        if p_accident < 0.2:
+        if p_accident < 0.1:
             return "LOW"
-        elif p_accident < 0.5:
+        elif p_accident < 0.3:
             return "MEDIUM"
-        elif p_accident < 0.75:
+        elif p_accident < 0.6:
             return "HIGH"
         else:
             return "CRITICAL"
 
 
 def main():
-    """Development/testing"""
+    """Development/testing of the true PGM Inference"""
     logging.basicConfig(level=logging.INFO)
     
-    # Load causal DAG
-    from backend.data.crs_parser import CRSParser
     from backend.ml.causal_dag import CausalDAGBuilder
+    dag_builder = CausalDAGBuilder()
     
-    parser = CRSParser()
-    corpus = parser.get_corpus()
-    
-    dag_builder = CausalDAGBuilder(corpus)
-    dag_builder.build_manual_dag()
-    dag_builder.validate_dag()
-    
-    # Initialize Bayesian network
     bayesian = BayesianRiskNetwork(dag_builder)
     
-    print("\n=== Bayesian Network Inference ===")
+    print("\n=== True pgmpy Exact Inference ===")
     
-    # Test cases
     test_cases = [
         {
             "name": "Normal train operations",
@@ -327,24 +230,19 @@ def main():
     
     for test in test_cases:
         print(f"\n--- {test['name']} ---")
-        
-        # Get prediction
+        import time
+        t0 = time.time()
         pred = bayesian.update_belief(test['obs'])
+        t1 = time.time()
         
-        # Get explanation
         explanation = bayesian.explain_prediction(pred, test['obs'])
         
-        print(f"P(accident) = {pred.p_accident:.3f}")
+        print(f"P(accident) = {pred.p_accident:.4f}")
         print(f"Risk level: {explanation['risk_level']}")
-        print(f"Confidence: {explanation['confidence']}")
-        print(f"Time to accident: {pred.time_to_accident_minutes} min")
-        print(f"Active factors: {explanation['active_factors']}")
-        
-        # Forward simulation
-        simulations = bayesian.forward_simulate(test['obs'])
-        print(f"\nForward simulation:")
-        for horizon, sim_pred in simulations.items():
-            print(f"  +{horizon}min: P(accident)={sim_pred.p_accident:.3f}")
+        print(f"Confidence (evidence ratio): {explanation['confidence']:.2f}")
+        print(f"Observed issues: {explanation['active_observed_factors']}")
+        print(f"Inferred hidden dangers: {explanation['inferred_hidden_dangers']}")
+        print(f"Inference latency: {(t1-t0)*1000:.1f} ms")
 
 
 if __name__ == "__main__":

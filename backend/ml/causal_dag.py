@@ -1,364 +1,189 @@
 """
-Causal DAG Discovery & Inference
+Causal DAG Discovery & Inference using pgmpy
 
-Build directed acyclic graphs from historical CRS accident data.
-Use for intervention effect estimation and causal reasoning.
-
-This is the "understanding" layer - why accidents happen.
+Build directed acyclic graphs for Indian Railways operations.
+Provides the structural model and Conditional Probability Tables (CPTs)
+for true exact Bayesian inference.
 """
 
-from typing import Dict, List, Set, Tuple, Optional
-from dataclasses import dataclass, asdict
+from typing import Dict, List, Tuple
 import logging
-import json
+from pgmpy.models import BayesianNetwork
+from pgmpy.factors.discrete import TabularCPD
+import itertools
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class CausalNode:
-    """Node in the causal graph"""
-    name: str
-    description: str
-    values: List[str]  # Discrete values this variable can take
-    
-    def to_dict(self):
-        return asdict(self)
-
-
-@dataclass
-class CausalEdge:
-    """Causal relationship in the graph"""
-    source: str
-    target: str
-    weight: float  # Strength of causation (0-1)
-    description: str
-    
-    def to_dict(self):
-        return asdict(self)
-
-
 class CausalDAGBuilder:
-    """Build causal DAGs from accident corpus"""
+    """Build causal DAGs and true Probabilistic Graphical Models using pgmpy"""
     
-    def __init__(self, accident_corpus: List):
+    def __init__(self, accident_corpus: List = None):
         """
-        Initialize with parsed CRS accidents.
-        
-        Args:
-            accident_corpus: List of AccidentRecord objects
+        Initialize with parsed CRS accidents (corpus not strictly needed for manual DAG).
         """
         self.corpus = accident_corpus
-        self.dag = None
-        self.nodes: Dict[str, CausalNode] = {}
-        self.edges: Dict[Tuple[str, str], CausalEdge] = {}
+        self.model = None
+        self.nodes = [
+            "maintenance_skip", 
+            "signal_failure", 
+            "track_mismatch", 
+            "delay_cascade", 
+            "train_bunching", 
+            "high_centrality_junction", 
+            "night_shift", 
+            "accident"
+        ]
         
-        logger.info(f"Initialized CausalDAGBuilder with {len(accident_corpus)} accidents")
+        logger.info("Initialized pgmpy CausalDAGBuilder")
     
-    def build_manual_dag(self) -> Dict:
+    def build_manual_dag(self) -> BayesianNetwork:
         """
-        Construct causal DAG based on domain expertise + accident analysis.
-        
-        This represents the causal chains found in 40+ years of CRS reports.
+        Construct a true causal Bayesian Network based on domain expertise + accident analysis.
+        This defines the DAG structure and the exact CPDS.
         """
+        # Node states: 0 = False, 1 = True
         
-        # Define nodes based on accident patterns
-        self.nodes = {
-            "maintenance_skip": CausalNode(
-                name="maintenance_skip",
-                description="Scheduled maintenance was skipped or delayed",
-                values=["true", "false"]
-            ),
-            "signal_failure": CausalNode(
-                name="signal_failure",
-                description="Signal system encounters failure or misconfiguration",
-                values=["true", "false"]
-            ),
-            "track_mismatch": CausalNode(
-                name="track_mismatch",
-                description="Signal aspect doesn't match actual track routing",
-                values=["true", "false"]
-            ),
-            "delay_cascade": CausalNode(
-                name="delay_cascade",
-                description="Train delays accumulate (>30 min)",
-                values=["true", "false"]
-            ),
-            "train_bunching": CausalNode(
-                name="train_bunching",
-                description="Multiple trains converge on same junction",
-                values=["true", "false"]
-            ),
-            "high_centrality_junction": CausalNode(
-                name="high_centrality_junction",
-                description="Junction has high betweenness centrality (1.03 lakh km analysis)",
-                values=["true", "false"]
-            ),
-            "night_shift": CausalNode(
-                name="night_shift",
-                description="Accident occurs during night hours (22:00-05:00)",
-                values=["true", "false"]
-            ),
-            "accident": CausalNode(
-                name="accident",
-                description="Train collision / derailment / catastrophic event",
-                values=["true", "false"]
-            ),
-        }
+        # 1. Define Edges structure
+        edges = [
+            ("maintenance_skip", "signal_failure"),
+            ("maintenance_skip", "delay_cascade"),
+            ("signal_failure", "track_mismatch"),
+            ("track_mismatch", "train_bunching"),
+            ("delay_cascade", "train_bunching"),
+            ("high_centrality_junction", "train_bunching"),
+            ("night_shift", "train_bunching"),
+            ("night_shift", "signal_failure"),
+            ("train_bunching", "accident"),
+            ("track_mismatch", "accident")
+        ]
         
-        # Define edges (causal relationships)
-        self.edges = {
-            ("maintenance_skip", "signal_failure"): CausalEdge(
-                source="maintenance_skip",
-                target="signal_failure",
-                weight=0.85,
-                description="Skipped maintenance leads to signal anomalies"
-            ),
-            ("maintenance_skip", "delay_cascade"): CausalEdge(
-                source="maintenance_skip",
-                target="delay_cascade",
-                weight=0.70,
-                description="Deferred maintenance causes operational delays"
-            ),
-            ("signal_failure", "track_mismatch"): CausalEdge(
-                source="signal_failure",
-                target="track_mismatch",
-                weight=0.90,
-                description="Signal failures lead to signal-track inconsistencies"
-            ),
-            ("track_mismatch", "train_bunching"): CausalEdge(
-                source="track_mismatch",
-                target="train_bunching",
-                weight=0.80,
-                description="Misrouting causes trains to converge unexpectedly"
-            ),
-            ("delay_cascade", "train_bunching"): CausalEdge(
-                source="delay_cascade",
-                target="train_bunching",
-                weight=0.75,
-                description="Cascading delays increase convergence probability"
-            ),
-            ("high_centrality_junction", "train_bunching"): CausalEdge(
-                source="high_centrality_junction",
-                target="train_bunching",
-                weight=0.95,
-                description="Network topology forces trains to converge at high-centrality junctions"
-            ),
-            ("train_bunching", "accident"): CausalEdge(
-                source="train_bunching",
-                target="accident",
-                weight=0.88,
-                description="Converging trains at high-risk junction cause collision"
-            ),
-            ("track_mismatch", "accident"): CausalEdge(
-                source="track_mismatch",
-                target="accident",
-                weight=0.87,
-                description="Direct path: signal-track mismatch → unexpected routing → collision"
-            ),
-            ("night_shift", "train_bunching"): CausalEdge(
-                source="night_shift",
-                target="train_bunching",
-                weight=0.40,
-                description="Night shift increases fatigue & likelihood of bunching"
-            ),
-            ("night_shift", "signal_failure"): CausalEdge(
-                source="night_shift",
-                target="signal_failure",
-                weight=0.35,
-                description="Night shift increases maintenance errors"
-            ),
-        }
+        self.model = BayesianNetwork(edges)
         
-        # Convert to dict format
-        dag_dict = {
-            "nodes": {name: node.to_dict() for name, node in self.nodes.items()},
-            "edges": {f"{edge.source}->{edge.target}": edge.to_dict() for edge in self.edges.values()},
-        }
+        # 2. Define Priors (base probabilities for root nodes)
         
-        self.dag = dag_dict
-        return dag_dict
+        # P(maintenance_skip) = 5%
+        cpd_maint = TabularCPD(variable='maintenance_skip', variable_card=2, values=[[0.95], [0.05]])
+        
+        # P(night_shift) = 30%
+        cpd_night = TabularCPD(variable='night_shift', variable_card=2, values=[[0.70], [0.30]])
+        
+        # P(high_centrality_junction) = 10%
+        cpd_cent = TabularCPD(variable='high_centrality_junction', variable_card=2, values=[[0.90], [0.10]])
+        
+        # 3. Define conditional probabilities
+        
+        # P(signal_failure | maintenance_skip, night_shift)
+        # evidence order: [maintenance_skip=0/1, night_shift=0/1]
+        # values[1] (prob of failure=1) = [m=0/n=0, m=0/n=1, m=1/n=0, m=1/n=1]
+        sf_1 = [0.001, 0.005, 0.15, 0.25]
+        sf_0 = [1 - x for x in sf_1]
+        cpd_sig = TabularCPD(
+            variable='signal_failure', variable_card=2,
+            values=[sf_0, sf_1],
+            evidence=['maintenance_skip', 'night_shift'],
+            evidence_card=[2, 2]
+        )
+        
+        # P(delay_cascade | maintenance_skip)
+        # values[1] = [m=0, m=1]
+        dc_1 = [0.05, 0.35]
+        dc_0 = [1 - x for x in dc_1]
+        cpd_delay = TabularCPD(
+            variable='delay_cascade', variable_card=2,
+            values=[dc_0, dc_1],
+            evidence=['maintenance_skip'],
+            evidence_card=[2]
+        )
+        
+        # P(track_mismatch | signal_failure)
+        # values[1] = [s=0, s=1]
+        tm_1 = [0.0001, 0.20]
+        tm_0 = [1 - x for x in tm_1]
+        cpd_track = TabularCPD(
+            variable='track_mismatch', variable_card=2,
+            values=[tm_0, tm_1],
+            evidence=['signal_failure'],
+            evidence_card=[2]
+        )
+        
+        # P(train_bunching | delay_cascade, track_mismatch, high_centrality_junction, night_shift)
+        # Construct dynamically via noisy-OR-like logic
+        parents = ['delay_cascade', 'track_mismatch', 'high_centrality_junction', 'night_shift']
+        tb_1_probs = []
+        for combo in itertools.product([0, 1], repeat=4):
+            delay, track, cent, night = combo
+            p = 0.01  # base bunching chance
+            if delay: p += 0.30
+            if track: p += 0.40
+            if cent:  p += 0.15
+            if night: p += 0.05
+            p = min(0.95, p) # Cap
+            tb_1_probs.append(p)
+            
+        tb_0_probs = [1 - p for p in tb_1_probs]
+        cpd_bunching = TabularCPD(
+            variable='train_bunching', variable_card=2,
+            values=[tb_0_probs, tb_1_probs],
+            evidence=parents,
+            evidence_card=[2, 2, 2, 2]
+        )
+        
+        # P(accident | train_bunching, track_mismatch)
+        # values[1] = [b=0/t=0, b=0/t=1, b=1/t=0, b=1/t=1]
+        acc_1 = [0.0001, 0.05, 0.02, 0.85]  # Highest risk: track mismatch AND bunching (e.g. Balasore)
+        acc_0 = [1 - x for x in acc_1]
+        cpd_acc = TabularCPD(
+            variable='accident', variable_card=2,
+            values=[acc_0, acc_1],
+            evidence=['train_bunching', 'track_mismatch'],
+            evidence_card=[2, 2]
+        )
+        
+        # Add all CPDs to the model
+        self.model.add_cpds(cpd_maint, cpd_night, cpd_cent, cpd_sig, cpd_delay, cpd_track, cpd_bunching, cpd_acc)
+        
+        return self.model
     
     def validate_dag(self) -> bool:
-        """
-        Validate DAG:
-        1. No cycles
-        2. All edge targets are valid nodes
-        3. All edge sources are valid nodes
-        """
-        if not self.dag or not self.nodes or not self.edges:
-            logger.warning("DAG not built yet")
+        """Validate Bayesian Network mathematically"""
+        if self.model is None:
+            self.build_manual_dag()
+        try:
+            is_valid = self.model.check_model()
+            logger.info("DAG validation passed")
+            return is_valid
+        except Exception as e:
+            logger.error(f"DAG validation failed: {e}")
             return False
-        
-        node_names = set(self.nodes.keys())
-        
-        # Check all edges reference valid nodes
-        for edge in self.edges.values():
-            if edge.source not in node_names:
-                logger.error(f"Edge source {edge.source} not in nodes")
-                return False
-            if edge.target not in node_names:
-                logger.error(f"Edge target {edge.target} not in nodes")
-                return False
-        
-        # Check for cycles (simplified: our manual DAG is acyclic by construction)
-        logger.info("DAG validation passed")
-        return True
-    
-    def estimate_p_accident_given_state(self, state: Dict) -> float:
-        """
-        Estimate P(accident | observations) given state.
-        
-        Uses causal reasoning + evidence from accident corpus.
-        
-        Args:
-            state: {
-                'maintenance_skip': True,
-                'signal_failure': True,
-                'track_mismatch': True,
-                'high_centrality_junction': True,
-                'night_shift': True,
-                ...
-            }
-            
-        Returns:
-            P(accident | state) in [0, 1]
-        """
-        
-        # Base rate: P(accident) from corpus
-        # Calibrated from Balasore re-analysis: 87% when all factors present
-        p_accident = 0.001  # 0.1% base rate
-        
-        # Weight each causal factor exponentially (more realistic)
-        weights = {
-            'track_mismatch': 0.45,      # Direct cause (Balasore signature) - highest weight
-            'train_bunching': 0.30,      # High collision risk
-            'high_centrality_junction': 0.20,  # Structural risk (network analysis)
-            'maintenance_skip': 0.15,    # Precondition
-            'signal_failure': 0.15,      # Signal system failure
-            'delay_cascade': 0.10,       # Cascading delays
-            'night_shift': 0.08,         # Contextual factor
-        }
-        
-        # Compute posterior: combine evidence multiplicatively (Bayesian)
-        # Using exponential combination for realistic amplification
-        risk_multiplier = 1.0
-        active_count = 0
-        
-        for factor, weight in weights.items():
-            if state.get(factor, False):
-                # This factor is present: multiply risk by (1 + weight * 100)
-                risk_multiplier *= (1.0 + weight * 100)
-                active_count += 1
-            else:
-                # This factor absent: slightly reduce multiplier
-                risk_multiplier *= (1.0 - weight * 0.05)
-        
-        # Calibration: when all 7 factors present (Balasore), should be ~0.87
-        # Need to scale: 0.001 * multiplier ≈ 0.87
-        # So multiplier ≈ 870 when active_count = 7
-        p_accident_given_state = min(1.0, p_accident * risk_multiplier)
-        
-        return p_accident_given_state
-    
-    def explain_accident_risk(self, state: Dict) -> Dict:
-        """
-        Explain why an accident might happen given current state.
-        Used for alert reasoning.
-        """
-        p_accident = self.estimate_p_accident_given_state(state)
-        
-        # Identify which causal factors are active
-        active_factors = [f for f, v in state.items() if v]
-        
-        # Get causal paths to accident
-        paths = self._find_causal_paths_to_accident(active_factors)
-        
-        return {
-            'p_accident': p_accident,
-            'active_factors': active_factors,
-            'causal_chains': paths,
-            'interpretation': self._interpret_risk(p_accident)
-        }
-    
-    def _find_causal_paths_to_accident(self, factors: List[str]) -> List[List[str]]:
-        """Find causal chains from active factors to accident"""
-        paths = []
-        
-        # Hardcoded paths based on manual DAG
-        if 'track_mismatch' in factors:
-            paths.append(['track_mismatch', 'train_bunching', 'accident'])
-        if 'signal_failure' in factors and 'track_mismatch' in factors:
-            paths.append(['signal_failure', 'track_mismatch', 'accident'])
-        if 'high_centrality_junction' in factors and 'train_bunching' in factors:
-            paths.append(['high_centrality_junction', 'train_bunching', 'accident'])
-        
-        return paths
-    
-    def _interpret_risk(self, p_accident: float) -> str:
-        """Interpret risk level as human-readable text"""
-        if p_accident < 0.3:
-            return "Low risk"
-        elif p_accident < 0.6:
-            return "Medium risk"
-        elif p_accident < 0.8:
-            return "High risk"
-        else:
-            return "Critical risk"
-    
-    def to_json(self) -> str:
-        """Export DAG as JSON"""
-        return json.dumps(self.dag, indent=2)
 
+    def get_pgmpy_model(self) -> BayesianNetwork:
+        if self.model is None:
+            self.build_manual_dag()
+        return self.model
+
+    def estimate_p_accident_given_state(self, state: Dict) -> float:
+        from pgmpy.inference import VariableElimination
+        infer = VariableElimination(self.get_pgmpy_model())
+        evidence = {}
+        for k, v in state.items():
+            if k in self.model.nodes():
+                evidence[k] = 1 if v else 0
+        try:
+            res = infer.query(['accident'], evidence=evidence, joint=False)
+            return float(res['accident'].values[1])
+        except:
+            return 0.001
 
 def main():
-    """Development/testing"""
+    """Development/testing to view CPDs"""
     logging.basicConfig(level=logging.INFO)
-    
-    # Load accident corpus
-    from backend.data.crs_parser import CRSParser
-    
-    parser = CRSParser()
-    corpus = parser.get_corpus()
-    
-    # Build DAG
-    dag_builder = CausalDAGBuilder(corpus)
-    dag = dag_builder.build_manual_dag()
-    
-    print("\n=== Causal DAG ===")
-    print(f"Nodes: {list(dag_builder.nodes.keys())}")
-    print(f"Edges: {len(dag_builder.edges)}")
-    
-    # Validate
-    dag_builder.validate_dag()
-    
-    # Test risk estimation
-    print("\n=== Risk Estimation Examples ===")
-    
-    test_cases = [
-        {"name": "Normal operations", "state": {}},
-        {"name": "Maintenance skip only", "state": {"maintenance_skip": True}},
-        {"name": "Signal failure", "state": {"signal_failure": True}},
-        {"name": "Signal-track mismatch", "state": {"track_mismatch": True}},
-        {"name": "Balasore conditions", "state": {
-            "maintenance_skip": True,
-            "signal_failure": True,
-            "track_mismatch": True,
-            "high_centrality_junction": True,
-            "night_shift": True,
-            "train_bunching": True
-        }},
-    ]
-    
-    for test in test_cases:
-        p_accident = dag_builder.estimate_p_accident_given_state(test["state"])
-        explanation = dag_builder.explain_accident_risk(test["state"])
-        
-        print(f"\n{test['name']}:")
-        print(f"  P(accident) = {p_accident:.3f}")
-        print(f"  Active factors: {explanation['active_factors']}")
-        print(f"  Risk level: {explanation['interpretation']}")
-
+    builder = CausalDAGBuilder()
+    model = builder.build_manual_dag()
+    builder.validate_dag()
+    print("\nModel constructed successfully.")
+    print(f"Nodes: {model.nodes()}")
+    print(f"Edges: {model.edges()}")
 
 if __name__ == "__main__":
     main()

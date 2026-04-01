@@ -30,7 +30,7 @@ export default function Alerts() {
 
   // Also subscribe to live stream
   useEffect(() => {
-    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/live`
+    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:8000/ws/live`
     const ws = new WebSocket(wsUrl)
     ws.onmessage = e => {
       const msg = JSON.parse(e.data)

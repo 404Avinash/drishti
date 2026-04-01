@@ -185,6 +185,11 @@ input, select { font-family: inherit; outline: none; }
   100% { transform: scale(2.5); opacity: 0; }
 }
 
+@keyframes float {
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50% { transform: translateX(-50%) translateY(-8px); }
+}
+
 .anim-fade { animation: fadeIn 0.4s ease both; }
 .anim-slide { animation: slideIn 0.3s ease both; }
 .anim-up { animation: slideUp 0.35s ease both; }
@@ -288,4 +293,26 @@ input, select { font-family: inherit; outline: none; }
 .rounded { border-radius: 8px; }
 .shrink-0 { flex-shrink: 0; }
 
-/* Removed scan-line */
+/* === TABLE === */
+.table-wrapper { overflow-x: auto; overflow-y: auto; }
+.table-wrapper table {
+  width: 100%; border-collapse: collapse;
+  font-size: 0.78rem;
+}
+.table-wrapper th {
+  text-align: left; padding: 7px 10px;
+  font-size: 0.64rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.8px; color: var(--t3);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg3);
+  white-space: nowrap;
+}
+.table-wrapper td {
+  padding: 8px 10px; border-bottom: 1px solid var(--border);
+  color: var(--t2); vertical-align: middle;
+}
+.table-wrapper tr:last-child td { border-bottom: none; }
+.table-wrapper tr:hover td { background: var(--card-h); }
+
+/* === MONO === */
+:root { --mono: 'JetBrains Mono', monospace; }
