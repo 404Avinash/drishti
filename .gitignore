@@ -1,17 +1,5 @@
-# Markdown documentation (excluded from repo)
-*.md
-!requirements.txt
-!Dockerfile
-!docker-compose.yml
-
-# Strategy and planning files (excluded from repo)
-STRATEGY_vs_KAVACH.md
-*_PLAN.md
-*_COMPLETE.md
-*_REPORT.md
-*_COMPLETION_REPORT.*
-DEPLOYMENT_GUIDE.md
-SYSTEM_STATUS.md
+# Markdown documentation (included; excluded selectively below)
+# *.md files tracked unless in: node_modules, build, dist, .venv, etc.
 
 # Python cache and virtual environments
 __pycache__/
