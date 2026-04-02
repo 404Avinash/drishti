@@ -49,9 +49,6 @@ COPY scripts/        ./scripts/
 COPY crs_corpus.json ./
 COPY requirements.txt ./
 
-# Copy pre-built network graph (generated in CI before docker build)
-COPY frontend/public/network_graph.json ./frontend/public/network_graph.json
-
 # Create non-root user (security best practice)
 RUN useradd --uid 1000 --no-create-home --shell /bin/false drishti \
     && chown -R drishti:drishti /app
