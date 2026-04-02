@@ -205,22 +205,33 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             set -e
+            mkdir -p /home/ubuntu/drishti
             cd /home/ubuntu/drishti
 
-            # Log into GHCR
+            # ── Ensure Docker Compose V2 plugin is installed ──────────────────
+            if ! docker compose version &>/dev/null 2>&1; then
+              echo "Installing docker-compose-plugin..."
+              sudo apt-get update -qq
+              sudo apt-get install -y docker-compose-plugin
+            fi
+            echo "Docker Compose: $(docker compose version)"
+
+            # ── Log into GHCR ─────────────────────────────────────────────────
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-            # Write env file
-            cat > .env <<EOF
+            # ── Write .env ────────────────────────────────────────────────────
+            REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+            cat > .env <<ENVEOF
             DATABASE_URL=postgresql://${{ secrets.DB_USERNAME }}:${{ secrets.DB_PASSWORD }}@${{ needs.terraform.outputs.rds_endpoint }}/drishti_db?sslmode=require
-            GITHUB_REPOSITORY=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-            EOF
+            GITHUB_REPOSITORY=${REPO}
+            ENVEOF
 
-            # Pull latest images and restart
+            # ── Pull & restart containers ─────────────────────────────────────
             docker compose -f docker-compose.production.yml pull
             docker compose -f docker-compose.production.yml up -d --remove-orphans
 
-            # Remove old images to save disk space
+            # ── Cleanup old images ────────────────────────────────────────────
             docker image prune -f
 
             echo "✅ DRISHTI deployed successfully!"
+
