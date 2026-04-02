@@ -1,5 +1,5 @@
 ################################################################################
-# Networking - VPC, Subnets, Security Groups, NAT Gateway
+# Networking - VPC, Subnets, Security Groups (EC2 Free Tier — no NAT GW)
 ################################################################################
 
 # VPC
@@ -22,7 +22,7 @@ resource "aws_internet_gateway" "main" {
   }
 }
 
-# Public Subnets (for NAT Gateway, ALB)
+# Public Subnet — EC2 lives here (public IP, free)
 resource "aws_subnet" "public_1" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "10.0.1.0/24"
@@ -47,7 +47,7 @@ resource "aws_subnet" "public_2" {
   }
 }
 
-# Private Subnets (for ECS tasks, RDS)
+# Private Subnets — RDS lives here (not publicly exposed)
 resource "aws_subnet" "private_1" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.10.0/24"
@@ -70,57 +70,13 @@ resource "aws_subnet" "private_2" {
   }
 }
 
-# Elastic IPs for NAT Gateways
-resource "aws_eip" "nat_1" {
-  domain = "vpc"
-
-  tags = {
-    Name = "${var.app_name}-eip-1"
-  }
-
-  depends_on = [aws_internet_gateway.main]
-}
-
-resource "aws_eip" "nat_2" {
-  domain = "vpc"
-
-  tags = {
-    Name = "${var.app_name}-eip-2"
-  }
-
-  depends_on = [aws_internet_gateway.main]
-}
-
-# NAT Gateways (one per AZ for HA)
-resource "aws_nat_gateway" "nat_1" {
-  allocation_id = aws_eip.nat_1.id
-  subnet_id     = aws_subnet.public_1.id
-
-  tags = {
-    Name = "${var.app_name}-nat-1"
-  }
-
-  depends_on = [aws_internet_gateway.main]
-}
-
-resource "aws_nat_gateway" "nat_2" {
-  allocation_id = aws_eip.nat_2.id
-  subnet_id     = aws_subnet.public_2.id
-
-  tags = {
-    Name = "${var.app_name}-nat-2"
-  }
-
-  depends_on = [aws_internet_gateway.main]
-}
-
-# Public Route Table
+# Public Route Table (IGW attached)
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
 
   route {
-    cidr_block      = "0.0.0.0/0"
-    gateway_id      = aws_internet_gateway.main.id
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.main.id
   }
 
   tags = {
@@ -128,34 +84,6 @@ resource "aws_route_table" "public" {
   }
 }
 
-# Private Route Tables (one per NAT for HA)
-resource "aws_route_table" "private_1" {
-  vpc_id = aws_vpc.main.id
-
-  route {
-    cidr_block      = "0.0.0.0/0"
-    nat_gateway_id  = aws_nat_gateway.nat_1.id
-  }
-
-  tags = {
-    Name = "${var.app_name}-rt-private-1"
-  }
-}
-
-resource "aws_route_table" "private_2" {
-  vpc_id = aws_vpc.main.id
-
-  route {
-    cidr_block      = "0.0.0.0/0"
-    nat_gateway_id  = aws_nat_gateway.nat_2.id
-  }
-
-  tags = {
-    Name = "${var.app_name}-rt-private-2"
-  }
-}
-
-# Route Table Associations
 resource "aws_route_table_association" "public_1" {
   subnet_id      = aws_subnet.public_1.id
   route_table_id = aws_route_table.public.id
@@ -166,23 +94,22 @@ resource "aws_route_table_association" "public_2" {
   route_table_id = aws_route_table.public.id
 }
 
-resource "aws_route_table_association" "private_1" {
-  subnet_id      = aws_subnet.private_1.id
-  route_table_id = aws_route_table.private_1.id
-}
-
-resource "aws_route_table_association" "private_2" {
-  subnet_id      = aws_subnet.private_2.id
-  route_table_id = aws_route_table.private_2.id
-}
-
-# Security Group: ALB (inbound HTTP/HTTPS)
-resource "aws_security_group" "alb" {
-  name        = "${var.app_name}-sg-alb"
-  description = "Security group for ALB"
+# Security Group: EC2 (HTTP/HTTPS/SSH)
+resource "aws_security_group" "ec2_sg" {
+  name        = "${var.app_name}-sg-ec2"
+  description = "Allow HTTP, HTTPS, and SSH to the EC2 instance"
   vpc_id      = aws_vpc.main.id
 
   ingress {
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "HTTP"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
@@ -190,6 +117,7 @@ resource "aws_security_group" "alb" {
   }
 
   ingress {
+    description = "HTTPS"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
@@ -204,54 +132,22 @@ resource "aws_security_group" "alb" {
   }
 
   tags = {
-    Name = "${var.app_name}-sg-alb"
+    Name = "${var.app_name}-sg-ec2"
   }
 }
 
-# Security Group: ECS Tasks (inbound from ALB)
-resource "aws_security_group" "ecs_tasks" {
-  name        = "${var.app_name}-sg-ecs-tasks"
-  description = "Security group for ECS tasks"
-  vpc_id      = aws_vpc.main.id
-
-  ingress {
-    from_port       = var.container_port
-    to_port         = var.container_port
-    protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
-  }
-
-  # Allow internal communication between ECS tasks
-  ingress {
-    from_port = 0
-    to_port   = 65535
-    protocol  = "tcp"
-    self      = true
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "${var.app_name}-sg-ecs-tasks"
-  }
-}
-
-# Security Group: RDS (inbound from ECS tasks)
+# Security Group: RDS (inbound only from EC2)
 resource "aws_security_group" "rds" {
   name        = "${var.app_name}-sg-rds"
-  description = "Security group for RDS"
+  description = "Allow PostgreSQL from EC2 only"
   vpc_id      = aws_vpc.main.id
 
   ingress {
+    description     = "PostgreSQL from EC2"
     from_port       = 5432
     to_port         = 5432
     protocol        = "tcp"
-    security_groups = [aws_security_group.ecs_tasks.id]
+    security_groups = [aws_security_group.ec2_sg.id]
   }
 
   egress {
@@ -263,31 +159,6 @@ resource "aws_security_group" "rds" {
 
   tags = {
     Name = "${var.app_name}-sg-rds"
-  }
-}
-
-# Security Group: Redis (inbound from ECS tasks)
-resource "aws_security_group" "redis" {
-  name        = "${var.app_name}-sg-redis"
-  description = "Security group for Redis"
-  vpc_id      = aws_vpc.main.id
-
-  ingress {
-    from_port       = 6379
-    to_port         = 6379
-    protocol        = "tcp"
-    security_groups = [aws_security_group.ecs_tasks.id]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "${var.app_name}-sg-redis"
   }
 }
 

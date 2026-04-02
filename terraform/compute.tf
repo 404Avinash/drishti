@@ -1,190 +1,130 @@
 ################################################################################
-# Compute - ECS Clusters, Task Definitions, Services, Auto-Scaling
+# Compute - EC2 Instance (AWS Free Tier Compatible)
 ################################################################################
 
-# CloudWatch Log Group for ECS
-resource "aws_cloudwatch_log_group" "ecs" {
-  name              = "/ecs/${var.app_name}"
-  retention_in_days = 7
+data "aws_ami" "ubuntu" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical
 
-  tags = {
-    Name = "${var.app_name}-ecs-logs"
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
   }
 }
 
-# ECS Cluster
-resource "aws_ecs_cluster" "main" {
-  name = "${var.app_name}-cluster-${var.environment}"
+# IAM Role for EC2
+resource "aws_iam_role" "ec2_role" {
+  name = "${var.app_name}-ec2-role"
 
-  setting {
-    name  = "containerInsights"
-    value = "enabled"
-  }
-
-  tags = {
-    Name = "${var.app_name}-cluster-${var.environment}"
-  }
-}
-
-# ECS Cluster Capacity Providers
-resource "aws_ecs_cluster_capacity_providers" "main" {
-  cluster_name = aws_ecs_cluster.main.name
-
-  capacity_providers = ["FARGATE", "FARGATE_SPOT"]
-
-  default_capacity_provider_strategy {
-    base              = 1
-    weight            = 100
-    capacity_provider = "FARGATE"
-  }
-
-  default_capacity_provider_strategy {
-    weight            = 50
-    capacity_provider = "FARGATE_SPOT"
-  }
-}
-
-data "aws_iam_role" "lab_role" {
-  name = "LabRole"
-}
-
-
-# ECS Task Definition (Fargate)
-resource "aws_ecs_task_definition" "app" {
-  family                   = var.app_name
-  network_mode             = "awsvpc"
-  requires_compatibilities = ["FARGATE"]
-  cpu                      = "256"
-  memory                   = "512"
-  execution_role_arn       = data.aws_iam_role.lab_role.arn
-  task_role_arn            = data.aws_iam_role.lab_role.arn
-
-  container_definitions = jsonencode([
-    {
-      name      = var.app_name
-      image     = var.container_image
-      essential = true
-      portMappings = [
-        {
-          containerPort = var.container_port
-          hostPort      = var.container_port
-          protocol      = "tcp"
-        }
-      ]
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          "awslogs-group"         = aws_cloudwatch_log_group.ecs.name
-          "awslogs-region"        = var.aws_region
-          "awslogs-stream-prefix" = "ecs"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
         }
       }
-      environment = [
-        {
-          name  = "ENVIRONMENT"
-          value = var.environment
-        },
-        {
-          name  = "LOG_LEVEL"
-          value = var.environment == "production" ? "INFO" : "DEBUG"
-        }
-      ]
-      secrets = [
-        {
-          name      = "DATABASE_URL"
-          valueFrom = "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${var.app_name}/database-url"
-        },
-        {
-          name      = "REDIS_URL"
-          valueFrom = "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${var.app_name}/redis-url"
-        }
-      ]
-    }
-  ])
-
-  tags = {
-    Name = "${var.app_name}-task"
-  }
+    ]
+  })
 }
 
-# ECS Service
-resource "aws_ecs_service" "app" {
-  name            = "${var.app_name}-service"
-  cluster         = aws_ecs_cluster.main.id
-  task_definition = aws_ecs_task_definition.app.arn
-  desired_count   = var.ecs_desired_count
-  launch_type     = "FARGATE"
+resource "aws_iam_role_policy_attachment" "ssm_core" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
 
-  network_configuration {
-    subnets          = [aws_subnet.private_1.id, aws_subnet.private_2.id]
-    security_groups  = [aws_security_group.ecs_tasks.id]
-    assign_public_ip = false
-  }
+resource "aws_iam_instance_profile" "ec2_profile" {
+  name = "${var.app_name}-ec2-profile"
+  role = aws_iam_role.ec2_role.name
+}
 
-  load_balancer {
-    target_group_arn = aws_lb_target_group.app.arn
-    container_name   = var.app_name
-    container_port   = var.container_port
-  }
+# Key Pair (assuming one is passed or created)
+# If not passed, we rely on AWS Systems Manager (SSM) for access
+resource "aws_instance" "app_server" {
+  ami           = data.aws_ami.ubuntu.id
+  instance_type = "t3.micro"
+  subnet_id     = aws_subnet.public_1.id
+  iam_instance_profile = aws_iam_instance_profile.ec2_profile.name
 
-  deployment_configuration {
-    maximum_percent         = 200
-    minimum_healthy_percent = 100
-    deployment_circuit_breaker {
-      enable   = true
-      rollback = true
-    }
-  }
-
-  depends_on = [
-    aws_lb_listener.app_https
+  vpc_security_group_ids = [
+    aws_security_group.ec2_sg.id
   ]
 
+  user_data = <<-EOF
+              #!/bin/bash
+              apt-get update
+              apt-get install -y docker.io docker-compose
+              systemctl enable docker
+              systemctl start docker
+              usermod -aG docker ubuntu
+              # Setup a directory for drishti
+              mkdir -p /home/ubuntu/drishti
+              chown ubuntu:ubuntu /home/ubuntu/drishti
+              EOF
+
   tags = {
-    Name = "${var.app_name}-service"
+    Name = "${var.app_name}-ec2-${var.environment}"
   }
 }
 
-# Auto Scaling Target
-resource "aws_appautoscaling_target" "ecs_target" {
-  max_capacity       = var.ecs_max_capacity
-  min_capacity       = var.ecs_min_capacity
-  resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.app.name}"
-  scalable_dimension = "ecs:service:DesiredCount"
-  service_namespace  = "ecs"
-}
+resource "aws_eip" "app_eip" {
+  instance = aws_instance.app_server.id
+  domain   = "vpc"
 
-# Auto Scaling Policy: CPU Scaling
-resource "aws_appautoscaling_policy" "ecs_policy_cpu" {
-  name               = "${var.app_name}-cpu-scaling"
-  policy_type        = "TargetTrackingScaling"
-  resource_id        = aws_appautoscaling_target.ecs_target.resource_id
-  scalable_dimension = aws_appautoscaling_target.ecs_target.scalable_dimension
-  service_namespace  = aws_appautoscaling_target.ecs_target.service_namespace
-
-  target_tracking_scaling_policy_configuration {
-    predefined_metric_specification {
-      predefined_metric_type = "ECSServiceAverageCPUUtilization"
-    }
-    target_value = 70.0
+  tags = {
+    Name = "${var.app_name}-eip"
   }
 }
 
-# Auto Scaling Policy: Memory Scaling
-resource "aws_appautoscaling_policy" "ecs_policy_memory" {
-  name               = "${var.app_name}-memory-scaling"
-  policy_type        = "TargetTrackingScaling"
-  resource_id        = aws_appautoscaling_target.ecs_target.resource_id
-  scalable_dimension = aws_appautoscaling_target.ecs_target.scalable_dimension
-  service_namespace  = aws_appautoscaling_target.ecs_target.service_namespace
+# New Security Group for EC2
+resource "aws_security_group" "ec2_sg" {
+  name        = "${var.app_name}-sg-ec2"
+  description = "Security group for EC2 instance"
+  vpc_id      = aws_vpc.main.id
 
-  target_tracking_scaling_policy_configuration {
-    predefined_metric_specification {
-      predefined_metric_type = "ECSServiceAverageMemoryUtilization"
-    }
-    target_value = 80.0
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "SSH Access"
+  }
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "HTTP Access"
+  }
+
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "HTTPS Access"
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.app_name}-sg-ec2"
   }
 }
 
-# Data source for current AWS account
-data "aws_caller_identity" "current" {}
+output "ec2_public_ip" {
+  value = aws_eip.app_eip.public_ip
+}

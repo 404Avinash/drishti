@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+
+  # ── Redis (in-container, no ElastiCache fees) ──────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: drishti-redis
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - redis_data:/data
+
+  # ── Backend API ─────────────────────────────────────────────────────────────
+  drishti-api:
+    image: ghcr.io/${GITHUB_REPOSITORY}/backend:latest
+    container_name: drishti-api
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=${DATABASE_URL}
+      - LOG_LEVEL=INFO
+      - ENVIRONMENT=production
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Frontend (Nginx serves React + proxies /api → backend) ──────────────────
+  drishti-frontend:
+    image: ghcr.io/${GITHUB_REPOSITORY}/frontend:latest
+    container_name: drishti-frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - drishti-api
+
+volumes:
+  redis_data:
+
+networks:
+  default:
+    name: drishti_network
