@@ -50,6 +50,7 @@ htmlcov/
 !crs_corpus.json
 !frontend/package.json
 !frontend/package-lock.json
+!frontend/public/network_graph.json
 !package.json
 !package-lock.json
 
