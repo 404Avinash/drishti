@@ -149,7 +149,7 @@ jobs:
 
       - name: Terraform Init
         working-directory: terraform
-        run: terraform init
+        run: terraform init -upgrade -reconfigure
 
       - name: Terraform Plan
         working-directory: terraform
