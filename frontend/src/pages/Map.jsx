@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, CircleMarker, Popup, Polyline } from 'react-le
 import { Link } from 'react-router-dom'
 import 'leaflet/dist/leaflet.css'
 import { Navigation, Shield, Layers, AlertTriangle, TrendingUp } from 'lucide-react'
+import { getCurrentTrains, setupPolling, clearPolling } from '../api'
 
 // ── Colour helpers ────────────────────────────────────────────────────────────
 const stressColor = s => ({
@@ -152,23 +153,26 @@ export default function NetworkMap() {
       .catch(() => {})
   }, [])
 
-  // Subscribe to live stress updates
+  // Subscribe to live train updates via polling
   useEffect(() => {
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${proto}//${window.location.host}/ws/live`)
-
-    ws.onmessage = e => {
-      const msg = JSON.parse(e.data)
-      if (msg.type === 'network_pulse' && msg.data?.nodes) {
-        setNodes(prev => {
-          const liveMap = {}
-          msg.data.nodes.forEach(n => { liveMap[n.id] = n })
-          return prev.map(n => liveMap[n.id] ? { ...n, ...liveMap[n.id] } : n)
-        })
-      }
-    }
-
-    return () => ws.close()
+    const pollId = setupPolling(
+      (trains) => {
+        // Convert train objects to node-like structure for map display
+        setNodes(trains.map(t => ({
+          id: t.id || t.train_id,
+          name: t.name || t.train_number,
+          lat: t.lat || t.latitude,
+          lon: t.lon || t.longitude,
+          stress_level: t.stress_level || 'LOW',
+          current_station: t.current_station,
+          delay_min: t.delay_min || 0,
+          ...t // spread all train properties for additional data
+        })))
+      },
+      getCurrentTrains,
+      8000
+    )
+    return () => clearPolling(pollId)
   }, [])
 
   const visibleNodes = useMemo(() => {

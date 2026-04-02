@@ -13,8 +13,10 @@ from backend.data.crs_parser import CRSParser
 from backend.data.ntes_connector import NTESConnector
 from backend.data.crs_loader import CRSLoader
 from backend.data.ntes_live import NTESLiveConnector
+from backend.data.train_repository import TrainDataRepository
 from backend.data.cleaning import DataCleaner
-
+from backend.data.real_feed_connector import RealFeedConnector
+from backend.data.quality_checker import DataQualityChecker
 
 @dataclass
 class IngestionResult:
@@ -25,6 +27,7 @@ class IngestionResult:
     records_received: int
     records_valid: int
     records_invalid: int
+    records_persisted: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -33,6 +36,7 @@ class IngestionResult:
             "records_received": self.records_received,
             "records_valid": self.records_valid,
             "records_invalid": self.records_invalid,
+            "records_persisted": self.records_persisted,
         }
 
 
@@ -43,34 +47,75 @@ class Phase1IngestionPipeline:
         self,
         ntes_connector: NTESConnector | None = None,
         crs_parser: CRSParser | None = None,
+        train_repository: TrainDataRepository | None = None,
+        real_feed_connector: RealFeedConnector | None = None,
+        quality_checker: DataQualityChecker | None = None,
+        persist_to_db: bool = True,
+        use_real_feeds: bool = True,
     ) -> None:
         self.ntes_connector = ntes_connector or NTESConnector()
         self.crs_parser = crs_parser or CRSParser()
+        self.train_repository = train_repository or TrainDataRepository()
+        self.real_feed_connector = real_feed_connector or RealFeedConnector()
+        self.quality_checker = quality_checker or DataQualityChecker()
+        self.persist_to_db = persist_to_db
+        self.use_real_feeds = use_real_feeds
 
     @staticmethod
     def _now_utc_iso() -> str:
         return datetime.now(timezone.utc).isoformat()
 
     async def ingest_ntes_once(self) -> IngestionResult:
-        """Poll NTES once with LIVE connector (production data)."""
-        live_connector = NTESLiveConnector()
-        trains = await live_connector.fetch_live_trains()
-        
-        # Validate all train states
-        valid = 0
-        for train in trains:
-            if await live_connector.validate_train_state(train):
-                valid += 1
-        
-        received = len(trains)
-        await live_connector.close()
-        
+        """Poll NTES/real feeds with quality gating."""
+        if self.use_real_feeds:
+            trains_raw = await self.real_feed_connector.fetch_trains_from_real_feeds()
+        else:
+            live_connector = NTESLiveConnector()
+            trains_raw = [
+                {
+                    "train_id": t.train_id,
+                    "train_name": t.train_name,
+                    "current_station": t.current_station,
+                    "current_lat": t.current_lat,
+                    "current_lon": t.current_lon,
+                    "actual_delay_minutes": t.actual_delay_minutes,
+                    "speed_kmh": t.speed_kmh,
+                    "route": t.route,
+                    "timestamp": t.timestamp,
+                    "source": "ntes_live",
+                }
+                for t in await live_connector.fetch_live_trains()
+            ]
+            await live_connector.close()
+
+        received = len(trains_raw)
+        valid_states = []
+        invalid = 0
+
+        for train in trains_raw:
+            is_valid, warnings = self.quality_checker.validate(train)
+            if not is_valid:
+                invalid += 1
+            else:
+                valid_states.append(train)
+
+        persisted = 0
+        if self.persist_to_db and valid_states:
+            summary = self.train_repository.ingest_train_states(
+                valid_states,
+                source="ntes_real_feeds" if self.use_real_feeds else "ntes_live",
+            )
+            persisted = summary["records_persisted"]
+
+        self.quality_checker.clear_recent_hashes()
+
         return IngestionResult(
             source="ntes",
             timestamp_utc=self._now_utc_iso(),
             records_received=received,
-            records_valid=valid,
-            records_invalid=received - valid,
+            records_valid=len(valid_states),
+            records_invalid=invalid,
+            records_persisted=persisted,
         )
 
     async def _ingest_crs_cleaned(self) -> IngestionResult:
@@ -101,17 +146,7 @@ class Phase1IngestionPipeline:
             records_received=received,
             records_valid=valid,
             records_invalid=max(0, received - valid),
-        )
-        """Load and validate CRS corpus records once."""
-        records = self.crs_parser.get_corpus()
-        valid = sum(1 for r in records if self.crs_parser.validate_record(r))
-        received = len(records)
-        return IngestionResult(
-            source="crs",
-            timestamp_utc=self._now_utc_iso(),
-            records_received=received,
-            records_valid=valid,
-            records_invalid=received - valid,
+            records_persisted=0,
         )
 
     async def run_once(self) -> dict[str, Any]:

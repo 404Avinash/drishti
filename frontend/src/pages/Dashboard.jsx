@@ -5,6 +5,7 @@ import {
   XAxis, YAxis, Tooltip, BarChart, Bar, CartesianGrid
 } from 'recharts'
 import { ExternalLink, Zap, AlertTriangle, CheckCircle, Clock } from 'lucide-react'
+import { getZoneCoverage, getAlerts, setupPolling, clearPolling } from '../api'
 
 const SEV = {
   CRITICAL: { cls: 'badge-red',    col: 'var(--red)',    bg: 'var(--red-g)',    border: 'var(--red-b)' },
@@ -66,33 +67,44 @@ export default function Dashboard({ stats }) {
   const feedRef = useRef(null)
 
   useEffect(() => {
-    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/live`
-    const ws = new WebSocket(wsUrl)
-
-    ws.onmessage = (e) => {
-      const msg = JSON.parse(e.data)
-      if (msg.stats) { /* handled by App.jsx */ }
-      if (msg.zones) setZones(msg.zones)
-      if (msg.recent_alerts) setFeed(msg.recent_alerts.slice(0, 60))
-      if (msg.type === 'alert' && msg.data) {
-        setFeed(prev => [msg.data, ...prev].slice(0, 60))
-        // Build rolling timeline
+    // Fetch zones and alerts from DB-backed APIs instead of WebSocket
+    const zonesPolling = setupPolling(setZones, getZoneCoverage, 10000)
+    const alertsPolling = setupPolling(
+      (newAlerts) => {
+        setFeed(newAlerts.slice(0, 60))
+        // Build rolling timeline from alert data
         const now = new Date()
         const label = `${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`
         setTimeline(prev => {
           const last = prev[prev.length - 1]
+          const severityCount = newAlerts.reduce((acc, a) => {
+            acc[a.severity || 'MEDIUM'] = (acc[a.severity || 'MEDIUM'] || 0) + 1
+            return acc
+          }, {})
           if (last?.time === label) {
             return [...prev.slice(0,-1), {
               ...last,
-              [msg.data.severity]: (last[msg.data.severity] || 0) + 1,
-              total: (last.total || 0) + 1
+              ...severityCount,
+              total: newAlerts.length
             }]
           }
-          return [...prev, { time: label, CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, total: 1, [msg.data.severity]: 1 }].slice(-20)
+          return [...prev, { 
+            time: label, 
+            CRITICAL: severityCount.CRITICAL || 0, 
+            HIGH: severityCount.HIGH || 0, 
+            MEDIUM: severityCount.MEDIUM || 0, 
+            LOW: severityCount.LOW || 0, 
+            total: newAlerts.length 
+          }].slice(-20)
         })
-      }
+      },
+      getAlerts,
+      15000
+    )
+    return () => {
+      clearPolling(zonesPolling)
+      clearPolling(alertsPolling)
     }
-    return () => ws.close()
   }, [])
 
   const donutData = [

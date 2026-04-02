@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.db.session import Base
@@ -51,3 +51,70 @@ class AuditEvent(Base):
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+
+
+class Station(Base):
+    __tablename__ = "stations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(16), unique=True, index=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    latitude: Mapped[float] = mapped_column(Float, nullable=False)
+    longitude: Mapped[float] = mapped_column(Float, nullable=False)
+    zone: Mapped[str] = mapped_column(String(16), default="UNKNOWN", nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+
+class Train(Base):
+    __tablename__ = "trains"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    train_id: Mapped[str] = mapped_column(String(32), unique=True, index=True, nullable=False)
+    train_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    route: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    origin_station_code: Mapped[str] = mapped_column(String(16), default="", nullable=False)
+    destination_station_code: Mapped[str] = mapped_column(String(16), default="", nullable=False)
+    current_station_code: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
+    source: Mapped[str] = mapped_column(String(32), default="ntes_live", nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+
+class DataIngestionRun(Base):
+    __tablename__ = "data_ingestion_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    records_received: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    records_valid: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    records_invalid: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    records_persisted: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="running", nullable=False)
+    error_message: Mapped[str] = mapped_column(Text, default="", nullable=False)
+
+
+class TrainTelemetry(Base):
+    __tablename__ = "train_telemetry"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    train_pk: Mapped[int] = mapped_column(ForeignKey("trains.id"), index=True, nullable=False)
+    train_id: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    station_code: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
+    latitude: Mapped[float] = mapped_column(Float, nullable=False)
+    longitude: Mapped[float] = mapped_column(Float, nullable=False)
+    delay_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    speed_kmh: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    timestamp_utc: Mapped[datetime] = mapped_column(DateTime, index=True, nullable=False)
+    source: Mapped[str] = mapped_column(String(32), default="ntes_live", nullable=False)
+    ingestion_run_id: Mapped[int] = mapped_column(ForeignKey("data_ingestion_runs.id"), nullable=False)
+    raw_payload: Mapped[str] = mapped_column(Text, default="{}", nullable=False)

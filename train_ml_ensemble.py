@@ -68,12 +68,12 @@ class MLEnsembleIntegration:
         accidents_file = "data/railway_accidents_400.csv"
         if Path(accidents_file).exists():
             self.accidents_df = pd.read_csv(accidents_file)
-            print(f"✅ Loaded {len(self.accidents_df)} accident records")
+            print(f"[OK] Loaded {len(self.accidents_df)} accident records")
             print(f"   Date range: {self.accidents_df['date'].min()} to {self.accidents_df['date'].max()}")
             print(f"   Total deaths: {self.accidents_df['deaths'].sum():,.0f}")
             print(f"   Average deaths/incident: {self.accidents_df['deaths'].mean():.1f}")
         else:
-            print(f"⚠️  Accidents file not found at {accidents_file}")
+            print(f"[WARN] Accidents file not found at {accidents_file}")
             # Use fallback
             loader = RealAccidentsLoader()
             records = loader.load()
@@ -90,32 +90,32 @@ class MLEnsembleIntegration:
                 }
                 for i, r in enumerate(records, 1)
             ])
-            print(f"✅ Using fallback: {len(self.accidents_df)} documented accidents")
+            print(f"[OK] Using fallback: {len(self.accidents_df)} documented accidents")
         
         # Layer 2: Railway stations
         print("\n[2/4] Loading railway stations network...")
         stations_file = "data/railway_stations_7000.csv"
         if Path(stations_file).exists():
             self.stations_df = pd.read_csv(stations_file)
-            print(f"✅ Loaded {len(self.stations_df)} stations")
+            print(f"[OK] Loaded {len(self.stations_df)} stations")
             print(f"   Zones covered: {self.stations_df['zone'].nunique()}")
             print(f"   Geographic span: Lat {self.stations_df['latitude'].min():.1f} to {self.stations_df['latitude'].max():.1f}")
         else:
-            print(f"⚠️  Stations file not found at {stations_file}")
+            print(f"[WARN] Stations file not found at {stations_file}")
             # Build network from scratch
             network = RealRailwayGraph()
             try:
                 network.build_from_github()
             except:
                 pass
-            print(f"✅ Network initialized with samples")
+            print(f"[OK] Network initialized with samples")
         
         # Layer 3: Zone health from CAG
         print("\n[3/4] Loading CAG zone health metrics...")
         loader = CAGZoneHealthLoader()
         zone_records = loader.load()  # Returns dict[str, ZoneHealth]
         self.zone_health = zone_records  # Already a dict
-        print(f"✅ Loaded {len(self.zone_health)} zone health records")
+        print(f"[OK] Loaded {len(self.zone_health)} zone health records")
         for zone_code, health in list(self.zone_health.items())[:3]:
             print(f"   {zone_code}: {health.trc_shortfall_pct}% shortfall, risk {health.risk_score:.1f}")
         
@@ -124,14 +124,14 @@ class MLEnsembleIntegration:
         parser = CRSNLPParser()
         inquiries = parser.load_crs_data()
         self.crs_patterns = parser.extract_72hour_signatures()
-        print(f"✅ Loaded {len(self.crs_patterns)} pre-accident signature patterns")
+        print(f"[OK] Loaded {len(self.crs_patterns)} pre-accident signature patterns")
         for sig_type, sig in list(self.crs_patterns.items())[:3]:
             print(f"   {sig_type}: {sig.probability*100:.0f}% probability, {sig.warning_window_hours}h window")
         
         # Layer 5: NTES streamer
         print("\n[5/5] Initializing NTES real-time streamer...")
         self.ntes_streamer = NTESLiveStreamer()
-        print(f"✅ NTES streamer ready: {len(self.ntes_streamer.high_centrality_junctions)} junctions monitored")
+        print(f"[OK] NTES streamer ready: {len(self.ntes_streamer.high_centrality_junctions)} junctions monitored")
     
     def compute_zone_base_rates(self):
         """
@@ -322,32 +322,32 @@ class MLEnsembleIntegration:
         print("ML ENSEMBLE INTEGRATION COMPLETE")
         print("="*80)
         
-        print(f"\n📊 DATA LAYERS:")
-        print(f"   ✅ {len(self.accidents_df)} historical accidents")
-        print(f"   ✅ {len(self.stations_df) if self.stations_df is not None else 0} railway stations")
-        print(f"   ✅ {len(self.zone_health)} zone health metrics (CAG)")
-        print(f"   ✅ {len(self.crs_patterns)} pre-accident patterns (40+ years CRS)")
-        print(f"   ✅ {len(self.ntes_streamer.high_centrality_junctions)} junctions (live NTES)")
+        print(f"\n[DATA LAYERS]:")
+        print(f"   [OK] {len(self.accidents_df)} historical accidents")
+        print(f"   [OK] {len(self.stations_df) if self.stations_df is not None else 0} railway stations")
+        print(f"   [OK] {len(self.zone_health)} zone health metrics (CAG)")
+        print(f"   [OK] {len(self.crs_patterns)} pre-accident patterns (40+ years CRS)")
+        print(f"   [OK] {len(self.ntes_streamer.high_centrality_junctions)} junctions (live NTES)")
         
-        print(f"\n🎯 ENSEMBLE COMPONENTS:")
+        print(f"\n[ENSEMBLE COMPONENTS]:")
         print(f"   1. Base Rates: {len(self.zone_base_rates)} zones with risk scoring")
         print(f"   2. Features: {len(self.feature_importance)} feature categories")
         print(f"   3. Temporal: {len(self.prediction_windows)} prediction windows (72-168h)")
         print(f"   4. Real-time: NTES streamer with 9 anomaly types")
         print(f"   5. Bayesian: Multi-layer probabilistic combination")
         
-        print(f"\n📈 PERFORMANCE METRICS:")
+        print(f"\n[PERFORMANCE METRICS]:")
         print(f"   Accuracy: {self.model_performance['retrospective_accuracy']}")
         print(f"   Training cases: {self.model_performance['total_cases']}")
         print(f"   Correct predictions: {self.model_performance['true_positives']}")
         
-        print(f"\n🚀 PREDICTION CAPABILITIES:")
-        print(f"   72-hour accidents warnings: ENABLED ✓")
-        print(f"   Real-time anomaly detection: ENABLED ✓")
-        print(f"   Zone risk scoring: ENABLED ✓")
-        print(f"   Impact modeling (deaths/injuries): ENABLED ✓")
+        print(f"\n[CAPABILITIES]:")
+        print(f"   72-hour accidents warnings: ENABLED [YES]")
+        print(f"   Real-time anomaly detection: ENABLED [YES]")
+        print(f"   Zone risk scoring: ENABLED [YES]")
+        print(f"   Impact modeling (deaths/injuries): ENABLED [YES]")
         
-        print(f"\n📁 MODEL STATE:")
+        print(f"\n[MODEL FILES]:")
         print(f"   Zone base rates: {len(self.zone_base_rates)} zones")
         print(f"   Feature importance: {len(self.feature_importance)} categories")
         print(f"   Prediction windows: {len(self.prediction_windows)} patterns")
@@ -416,7 +416,7 @@ def main():
         }
         json.dump(model_state_serializable, f, indent=2)
     
-    print(f"\n💾 Model state saved to ml_model_state.json")
+    print(f"\n[STATE] Model state saved to ml_model_state.json")
     
     return ensemble
 

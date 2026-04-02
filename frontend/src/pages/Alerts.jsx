@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { Search, SlidersHorizontal, RefreshCw, ExternalLink, Train } from 'lucide-react'
+import { getAlerts, setupPolling, clearPolling } from '../api'
 
 const SEV = {
   CRITICAL: { cls: 'badge-red',    col: 'var(--red)',    bg: 'var(--red-g)',    border: 'var(--red-b)' },
@@ -17,27 +18,17 @@ export default function Alerts() {
   const [sort, setSort] = useState('newest')
   const [selected, setSelected] = useState(null)
 
-  const load = () => {
-    setLoading(true)
-    const host = ''
-    fetch(`${host}/api/alerts/history?limit=200`)
-      .then(r => r.json())
-      .then(d => { setAlerts(d.alerts || []); setLoading(false) })
-      .catch(() => setLoading(false))
-  }
-
-  useEffect(() => { load() }, [])
-
-  // Also subscribe to live stream
   useEffect(() => {
-    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/live`
-    const ws = new WebSocket(wsUrl)
-    ws.onmessage = e => {
-      const msg = JSON.parse(e.data)
-      if (msg.type === 'alert' && msg.data)
-        setAlerts(prev => [msg.data, ...prev].slice(0, 200))
-    }
-    return () => ws.close()
+    // Fetch alerts from DB-backed API with polling
+    const pollId = setupPolling(
+      (newAlerts) => {
+        setAlerts(Array.isArray(newAlerts) ? newAlerts : [])
+        setLoading(false)
+      },
+      getAlerts,
+      10000
+    )
+    return () => clearPolling(pollId)
   }, [])
 
   const filtered = alerts

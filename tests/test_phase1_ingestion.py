@@ -20,7 +20,7 @@ async def test_phase1_pipeline_run_once_has_expected_shape(tmp_path: Path):
     assert len(snapshot["results"]) == 2
 
     names = {item["source"] for item in snapshot["results"]}
-    assert names == {"ntes", "crs"}
+    assert names == {"ntes", "crs_cleaned"}
 
 
 @pytest.mark.asyncio

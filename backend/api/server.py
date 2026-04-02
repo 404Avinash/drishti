@@ -32,6 +32,7 @@ from backend.api.schemas import (
     TokenResponse,
     sanitize_text,
 )
+from backend.api.trains_router import router as trains_router
 from backend.core.audit import AuditRecord, write_audit_event
 from backend.core.errors import AppError, register_error_handlers
 from backend.core.tracing import tracing_middleware
@@ -226,6 +227,9 @@ async def audit_middleware(request: Request, call_next):
 
 if metrics_router:
     app.include_router(metrics_router)
+
+from backend.api.data_endpoints import router as data_router
+app.include_router(data_router)
 
 stats = {
     "total": 0, "critical": 0, "high": 0, "medium": 0, "low": 0,

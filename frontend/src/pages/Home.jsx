@@ -5,6 +5,7 @@ import {
   Shield, Activity, AlertTriangle, Map, Brain, TrendingUp,
   ChevronRight, Zap, Target, Radio, Globe, ArrowRight
 } from 'lucide-react'
+import { getLiveStats, setupPolling, clearPolling } from '../api'
 
 // ── Animated counter ──────────────────────────────────────────────────────────
 function Counter({ to, suffix = '', duration = 2000 }) {
@@ -92,13 +93,9 @@ export default function Home() {
   const navigate = useNavigate()
 
   useEffect(() => {
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${proto}//${window.location.host}/ws/live`)
-    ws.onmessage = e => {
-      const msg = JSON.parse(e.data)
-      if (msg.stats) setLiveStats(s => ({ ...s, total: msg.stats.total, critical: msg.stats.critical }))
-    }
-    return () => ws.close()
+    // Fetch live stats from DB-backed API instead of WebSocket
+    const pollId = setupPolling(setLiveStats, getLiveStats, 5000)
+    return () => clearPolling(pollId)
   }, [])
 
   return (
