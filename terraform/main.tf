@@ -11,14 +11,9 @@ terraform {
     }
   }
 
-  # Remote state stored in S3 (bucket created manually once)
-  backend "s3" {
-    bucket         = "drishti-terraform-state"
-    key            = "prod/terraform.tfstate"
-    region         = "us-east-1"
-    encrypt        = true
-    dynamodb_table = "drishti-tfstate-lock"
-  }
+  # Partial backend — bucket name is injected via -backend-config in CI
+  # (bucket name includes AWS account ID so it is globally unique)
+  backend "s3" {}
 }
 
 provider "aws" {
