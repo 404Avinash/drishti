@@ -107,7 +107,7 @@ jobs:
           push: true
           tags: ${{ steps.image-names.outputs.backend_image }}:latest,${{ steps.image-names.outputs.backend_image }}:${{ github.sha }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=max,ignore-error=true
 
       - name: Build & Push Frontend
         uses: docker/build-push-action@v5
@@ -117,7 +117,7 @@ jobs:
           push: true
           tags: ${{ steps.image-names.outputs.frontend_image }}:latest,${{ steps.image-names.outputs.frontend_image }}:${{ github.sha }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=max,ignore-error=true
 
   # ── 4. Terraform Apply ──────────────────────────────────────────────────────
   terraform:
