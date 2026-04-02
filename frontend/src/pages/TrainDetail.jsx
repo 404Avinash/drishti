@@ -1,269 +1,178 @@
 import { useState, useEffect } from 'react'
-import { useParams, Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, MapPin, Clock, AlertTriangle, Shield, TrendingUp, Zap, Copy, CheckCheck, ExternalLink } from 'lucide-react'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, RadialBarChart, RadialBar } from 'recharts'
+import { useParams, useNavigate } from 'react-router-dom'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts'
+import AlertBadge from '../components/AlertBadge'
+import LiveIndicator from '../components/LiveIndicator'
 
-const SEV = {
-  CRITICAL: { col: 'var(--red)',    bg: 'var(--red-g)',    border: 'var(--red-b)' },
-  HIGH:     { col: 'var(--orange)', bg: 'var(--orange-g)', border: 'var(--orange-b)' },
-  MEDIUM:   { col: 'var(--yellow)', bg: 'var(--yellow-g)', border: 'var(--yellow-b)' },
-  LOW:      { col: 'var(--green)',  bg: 'var(--green-g)',  border: 'var(--green-b)' },
-}
-
-function RiskGauge({ score }) {
-  const color = score >= 80 ? 'var(--red)' : score >= 60 ? 'var(--orange)' : score >= 40 ? 'var(--yellow)' : 'var(--green)'
-  const data = [{ value: score, fill: color }, { value: 100 - score, fill: 'var(--bg3)' }]
+function Metric({ label, value, unit, color = 'var(--cyan)', large = false }) {
   return (
-    <div style={{ position: 'relative', width: 140, height: 140, margin: '0 auto' }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <RadialBarChart innerRadius={45} outerRadius={65} data={data} startAngle={90} endAngle={-270}>
-          <RadialBar dataKey="value" />
-        </RadialBarChart>
-      </ResponsiveContainer>
-      <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', textAlign: 'center' }}>
-        <div style={{ fontSize: '1.8rem', fontWeight: 900, color, fontFamily: 'JetBrains Mono, monospace', lineHeight: 1 }}>{score}</div>
-        <div style={{ fontSize: '0.58rem', color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: 1 }}>Risk %</div>
+    <div style={{ padding: '16px 20px', background: 'var(--glass)', backdropFilter: 'var(--blur-sm)', WebkitBackdropFilter: 'var(--blur-sm)', border: `1px solid ${color}20`, borderRadius: 'var(--r-md)', flex: 1, minWidth: 120 }}>
+      <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.14em', color: 'var(--t3)', textTransform: 'uppercase', marginBottom: 8 }}>{label}</div>
+      <div className="mono" style={{ fontSize: large ? 28 : 22, fontWeight: 800, color, lineHeight: 1 }}>
+        {value ?? '—'}{unit && <span style={{ fontSize: large ? 14 : 12, fontWeight: 500, marginLeft: 4 }}>{unit}</span>}
       </div>
     </div>
-  )
-}
-
-function CopyButton({ text }) {
-  const [copied, setCopied] = useState(false)
-  return (
-    <button
-      onClick={() => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
-      style={{ background: 'none', border: 'none', color: copied ? 'var(--green)' : 'var(--t3)', cursor: 'pointer', padding: 2 }}
-      title="Copy"
-    >
-      {copied ? <CheckCheck size={12} /> : <Copy size={12} />}
-    </button>
   )
 }
 
 export default function TrainDetail() {
-  const { id } = useParams()
-  const navigate = useNavigate()
-  const [data, setData] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState('overview')
+  const { id }      = useParams()
+  const navigate    = useNavigate()
+  const [train,    setTrain]   = useState(null)
+  const [history,  setHistory] = useState([])
+  const [loading,  setLoading] = useState(true)
+  const [live,     setLive]    = useState(false)
 
-  useEffect(() => {
-    const host = ''
-    fetch(`${host}/api/train/${id}/risk`)
-      .then(r => r.json())
-      .then(d => { setData(d); setLoading(false) })
-      .catch(() => {
-        // Mock
-        setData({
-          train_id: id,
-          train_name: 'Express',
-          risk_score: 78,
-          risk_level: 'HIGH',
-          alert_count: 23,
-          last_alert: {
-            station_name: 'Howrah Junction',
-            station_code: 'HWH',
-            zone: 'ER',
-            timestamp: new Date().toISOString(),
-            explanation: 'Speed 127 km/h exceeds section limit 95 km/h. DBSCAN anomaly cluster -1. Signal S-45 mismatch detected.',
-            actions: ['Issue Speed Restriction Order', 'Alert Section Controller', 'Flag for Inspection at Next Station'],
-            severity: 'HIGH',
-            risk_score: 78,
-            lat: 22.58, lng: 88.34,
-          },
-          history: [
-            { period: 'Day -5', count: 2, avg_risk: 35 },
-            { period: 'Day -4', count: 5, avg_risk: 42 },
-            { period: 'Day -3', count: 3, avg_risk: 38 },
-            { period: 'Day -2', count: 8, avg_risk: 61 },
-            { period: 'Day -1', count: 12, avg_risk: 71 },
-            { period: 'Today',  count: 15, avg_risk: 78 },
-          ]
-        })
-        setLoading(false)
-      })
-  }, [id])
+  const load = async () => {
+    try {
+      const [tRes, hRes] = await Promise.allSettled([
+        fetch(`/api/trains/${id}/current`),
+        fetch(`/api/trains/${id}/history?hours=12`),
+      ])
+      if (tRes.status === 'fulfilled' && tRes.value.ok) {
+        setTrain(await tRes.value.json())
+        setLive(true)
+      }
+      if (hRes.status === 'fulfilled' && hRes.value.ok) {
+        const data = await hRes.value.json()
+        if (Array.isArray(data)) {
+          const chartData = data.slice(-60).map(d => ({
+            time:   new Date(d.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+            speed:  d.speed || 0,
+            stress: d.stress_score ? +(d.stress_score * 100).toFixed(1) : 0,
+            delay:  d.delay_minutes || 0,
+          }))
+          setHistory(chartData)
+        }
+      }
+    } catch { setLive(false) }
+    setLoading(false)
+  }
+  useEffect(() => { load(); const iv = setInterval(load, 12000); return () => clearInterval(iv) }, [id])
+
+  const stressColor = {
+    CRITICAL: 'var(--red)', HIGH: 'var(--orange)',
+    MEDIUM: 'var(--yellow)', LOW: 'var(--green)', STABLE: 'var(--cyan)',
+  }[train?.stress_level] || 'var(--cyan)'
 
   if (loading) return (
-    <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16, color: 'var(--t2)' }}>
-      <div style={{ fontSize: '2rem', animation: 'spin 1.5s linear infinite' }}>🚄</div>
-      <div style={{ fontSize: '0.9rem' }}>Locating train {id}…</div>
+    <div style={{ padding: 40, textAlign: 'center', color: 'var(--t3)' }}>
+      Loading train data...
     </div>
   )
 
-  const s = SEV[data.risk_level] || SEV.LOW
-  const a = data.last_alert
+  if (!train) return (
+    <div style={{ padding: 40, textAlign: 'center' }}>
+      <div style={{ fontSize: 40, marginBottom: 12 }}>⟁</div>
+      <div style={{ fontSize: 16, color: 'var(--t2)', marginBottom: 8 }}>Train {id} not found</div>
+      <button onClick={() => navigate('/trains')} style={{ padding: '8px 20px', background: 'var(--cyan-10)', border: '1px solid var(--cyan-30)', borderRadius: 'var(--r-sm)', color: 'var(--cyan)', cursor: 'pointer', fontSize: 13 }}>
+        ← Back to Trains
+      </button>
+    </div>
+  )
 
   return (
-    <div style={{ height: '100%', overflowY: 'auto', padding: 20 }}>
-      
-      {/* Back + Header */}
-      <div style={{ marginBottom: 20 }}>
-        <button onClick={() => navigate(-1)} className="btn btn-ghost" style={{ marginBottom: 12, fontSize: '0.75rem' }}>
-          <ArrowLeft size={14} /> Back
-        </button>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+    <div style={{ padding: '32px 28px', maxWidth: 1200, margin: '0 auto' }}>
+      {/* Back */}
+      <button onClick={() => navigate('/trains')} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 20, background: 'none', border: 'none', color: 'var(--t2)', fontSize: 13, cursor: 'pointer', padding: 0 }}>
+        ← Back to Trains
+      </button>
+
+      {/* Hero */}
+      <div style={{ padding: '24px 28px', background: `linear-gradient(135deg, ${stressColor}10, var(--surface))`, border: `1px solid ${stressColor}30`, borderRadius: 'var(--r-lg)', marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
-              <h2 style={{ fontSize: '1.8rem', fontWeight: 900, fontFamily: 'JetBrains Mono, monospace' }}>🚆 {id}</h2>
-              {data.train_name && <span style={{ fontSize: '1rem', color: 'var(--t2)', fontWeight: 500 }}>{data.train_name}</span>}
-              <span style={{ background: s.bg, color: s.col, border: `1px solid ${s.border}`, padding: '3px 10px', borderRadius: 20, fontSize: '0.72rem', fontWeight: 700 }}>
-                {data.risk_level} RISK
-              </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 8 }}>
+              <h1 className="mono" style={{ fontSize: 32, fontWeight: 900, color: stressColor, letterSpacing: '0.1em' }}>
+                {train.train_id}
+              </h1>
+              <AlertBadge severity={train.stress_level} size="lg" />
+              <LiveIndicator offline={!live} />
             </div>
-            {a && (
-              <div style={{ display: 'flex', gap: 16, fontSize: '0.75rem', color: 'var(--t2)' }}>
-                <span>📍 {a.station_name}</span>
-                {a.zone && <span>Zone: {a.zone}</span>}
-                <span>🕐 {a.timestamp ? new Date(a.timestamp).toLocaleString() : 'N/A'}</span>
-              </div>
-            )}
+            <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', fontSize: 13, color: 'var(--t2)' }}>
+              {train.zone && <span>◉ Zone: <strong style={{ color: 'var(--t1)' }}>{train.zone}</strong></span>}
+              {train.current_station && <span>📍 At: <strong style={{ color: 'var(--t1)' }}>{train.current_station}</strong></span>}
+              {train.next_station    && <span>→ Next: <strong style={{ color: 'var(--t1)' }}>{train.next_station}</strong></span>}
+            </div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 4 }}>Last updated</div>
+            <div className="mono" style={{ fontSize: 13, color: 'var(--t2)' }}>
+              {train.timestamp ? new Date(train.timestamp).toLocaleTimeString('en-IN') : '—'}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="tabs" style={{ marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
-        {[['overview','Overview'], ['history','Alert History'], ['raw','Raw Data']].map(([k, l]) => (
-          <button key={k} className={`tab-btn ${tab === k ? 'active' : ''}`} onClick={() => setTab(k)}>{l}</button>
-        ))}
+      {/* Metrics row */}
+      <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
+        <Metric label="Speed"      value={train.speed != null ? Math.round(train.speed) : null} unit="km/h" color="var(--cyan)" large />
+        <Metric label="Stress Score" value={train.stress_score != null ? (train.stress_score * 100).toFixed(1) : null} unit="%" color={stressColor} large />
+        <Metric label="Delay"      value={train.delay_minutes} unit="min" color={train.delay_minutes > 0 ? 'var(--orange)' : 'var(--green)'} large />
+        {train.occupancy    != null && <Metric label="Occupancy"     value={Math.round(train.occupancy * 100)} unit="%" color="var(--purple)" />}
+        {train.track_quality!= null && <Metric label="Track Quality" value={(train.track_quality * 100).toFixed(0)} unit="%" color="var(--green)" />}
+        {train.weather      != null && <Metric label="Wx Factor"     value={(train.weather * 100).toFixed(0)} unit="%" color="var(--yellow)" />}
       </div>
 
-      {/* Overview Tab */}
-      {tab === 'overview' && (
-        <div className="anim-fade">
-          <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr 1fr', gap: 12, marginBottom: 16 }}>
-            {/* Gauge */}
-            <div className="glass-panel" style={{ borderTop: `2px solid ${s.col}` }}>
-              <div className="glass-header">Risk Score</div>
-              <div className="glass-content" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <RiskGauge score={data.risk_score} />
-              </div>
-            </div>
-
-            {/* Stats */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {[
-                { label: 'Total Alerts', val: data.alert_count, icon: <AlertTriangle size={14} />, col: 'var(--orange)' },
-                { label: 'Risk Level', val: data.risk_level, icon: <Shield size={14} />, col: s.col },
-              ].map(c => (
-                <div key={c.label} className="glass-panel" style={{ flex: 1 }}>
-                  <div className="glass-header">
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', color: c.col }}>{c.icon} {c.label}</div>
-                  </div>
-                  <div className="glass-content" style={{ fontSize: '1.5rem', fontWeight: 900, color: c.col, fontFamily: 'JetBrains Mono, monospace' }}>
-                    {c.val}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Trend */}
-            <div className="glass-panel">
-              <div className="glass-header">
-                <span>Risk Trend</span>
-                <TrendingUp size={13} color="var(--orange)" />
-              </div>
-              <div style={{ flex: 1, padding: 8 }}>
-                {data.history ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={data.history} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
-                      <XAxis dataKey="period" stroke="var(--border)" tick={{ fill: 'var(--t3)', fontSize: 8 }} />
-                      <YAxis stroke="var(--border)" tick={{ fill: 'var(--t3)', fontSize: 8 }} />
-                      <Tooltip contentStyle={{ background: 'var(--bg2)', border: '1px solid var(--border-b)', borderRadius: 8, fontSize: '0.75rem' }} />
-                      <Bar dataKey="avg_risk" name="Avg Risk" fill="var(--orange)" radius={[3,3,0,0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--t3)', fontSize: '0.78rem' }}>No history</div>}
-              </div>
-            </div>
+      {/* Charts */}
+      {history.length > 1 && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
+          {/* Speed chart */}
+          <div style={{ padding: '20px', background: 'var(--glass)', backdropFilter: 'var(--blur)', WebkitBackdropFilter: 'var(--blur)', border: '1px solid var(--b1)', borderRadius: 'var(--r-md)' }}>
+            <div style={{ marginBottom: 12, fontSize: 12, fontWeight: 700, color: 'var(--t2)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Speed History — 12h</div>
+            <ResponsiveContainer width="100%" height={160}>
+              <AreaChart data={history}>
+                <defs>
+                  <linearGradient id="speedGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor="var(--cyan)" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="var(--cyan)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke="var(--b1)" vertical={false} />
+                <XAxis dataKey="time" tick={{ fill: 'var(--t3)', fontSize: 9 }} tickLine={false} axisLine={false} interval={Math.floor(history.length / 6)} />
+                <YAxis tick={{ fill: 'var(--t3)', fontSize: 9 }} tickLine={false} axisLine={false} unit=" km/h" width={55} />
+                <Tooltip contentStyle={{ background: 'var(--surface)', border: '1px solid var(--b2)', borderRadius: 8, fontSize: 11 }} itemStyle={{ color: 'var(--cyan)' }} labelStyle={{ color: 'var(--t2)' }} />
+                <Area type="monotone" dataKey="speed" name="Speed" stroke="var(--cyan)" strokeWidth={2} fill="url(#speedGrad)" dot={false} />
+              </AreaChart>
+            </ResponsiveContainer>
           </div>
 
-          {/* Last Incident */}
-          {a && (
-            <div className="glass-panel" style={{ marginBottom: 12 }}>
-              <div className="glass-header">
-                <span>Latest Incident Report</span>
-                <span style={{ fontSize: '0.62rem', color: 'var(--t3)' }}>{a.timestamp ? new Date(a.timestamp).toLocaleString() : ''}</span>
-              </div>
-              <div className="glass-content">
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
-                  <div>
-                    <div style={{ fontSize: '0.62rem', color: 'var(--t3)', textTransform: 'uppercase', marginBottom: 4 }}>Location</div>
-                    <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <MapPin size={13} color="var(--blue)" />
-                      {a.station_name} {a.station_code && `(${a.station_code})`}
-                    </div>
-                  </div>
-                  {a.zone && (
-                    <div>
-                      <div style={{ fontSize: '0.62rem', color: 'var(--t3)', textTransform: 'uppercase', marginBottom: 4 }}>Railway Zone</div>
-                      <div style={{ fontWeight: 600 }}>{a.zone}</div>
-                    </div>
-                  )}
-                </div>
-
-                <div style={{ background: 'var(--bg3)', border: '1px solid var(--orange-b)', borderRadius: 8, padding: '12px 14px', marginBottom: 16 }}>
-                  <div style={{ fontSize: '0.62rem', color: 'var(--orange)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>⚡ AI Analysis</div>
-                  <div style={{ fontSize: '0.84rem', color: 'var(--t2)', lineHeight: 1.6 }}>{a.explanation}</div>
-                </div>
-
-                {a.actions && a.actions.length > 0 && (
-                  <div>
-                    <div style={{ fontSize: '0.62rem', color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Recommended Actions</div>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      {a.actions.map((act, i) => (
-                        <span key={i} style={{ background: 'var(--blue-gg)', border: '1px solid var(--blue-b)', color: 'var(--blue)', padding: '6px 12px', borderRadius: 6, fontSize: '0.74rem', fontWeight: 500 }}>
-                          {act}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* History Tab */}
-      {tab === 'history' && (
-        <div className="anim-fade">
-          <div className="glass-panel">
-            <div className="glass-header">Alert Count Over Time</div>
-            <div style={{ height: 240, padding: 12 }}>
-              {data.history ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={data.history} margin={{ top: 4, right: 12, left: -12, bottom: 0 }}>
-                    <XAxis dataKey="period" stroke="var(--border)" tick={{ fill: 'var(--t3)', fontSize: 10 }} />
-                    <YAxis stroke="var(--border)" tick={{ fill: 'var(--t3)', fontSize: 10 }} />
-                    <Tooltip contentStyle={{ background: 'var(--bg2)', border: '1px solid var(--border-b)', borderRadius: 8, fontSize: '0.75rem' }} />
-                    <Bar dataKey="count" name="Alerts" fill="var(--blue)" radius={[4,4,0,0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--t3)' }}>No historical data</div>}
-            </div>
+          {/* Stress chart */}
+          <div style={{ padding: '20px', background: 'var(--glass)', backdropFilter: 'var(--blur)', WebkitBackdropFilter: 'var(--blur)', border: '1px solid var(--b1)', borderRadius: 'var(--r-md)' }}>
+            <div style={{ marginBottom: 12, fontSize: 12, fontWeight: 700, color: 'var(--t2)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Stress Score — 12h</div>
+            <ResponsiveContainer width="100%" height={160}>
+              <AreaChart data={history}>
+                <defs>
+                  <linearGradient id="stressGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor="var(--orange)" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="var(--orange)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke="var(--b1)" vertical={false} />
+                <XAxis dataKey="time" tick={{ fill: 'var(--t3)', fontSize: 9 }} tickLine={false} axisLine={false} interval={Math.floor(history.length / 6)} />
+                <YAxis tick={{ fill: 'var(--t3)', fontSize: 9 }} tickLine={false} axisLine={false} domain={[0, 100]} unit="%" width={40} />
+                <Tooltip contentStyle={{ background: 'var(--surface)', border: '1px solid var(--b2)', borderRadius: 8, fontSize: 11 }} itemStyle={{ color: 'var(--orange)' }} labelStyle={{ color: 'var(--t2)' }} />
+                <Area type="monotone" dataKey="stress" name="Stress" stroke="var(--orange)" strokeWidth={2} fill="url(#stressGrad)" dot={false} />
+              </AreaChart>
+            </ResponsiveContainer>
           </div>
         </div>
       )}
 
-      {/* Raw Data Tab */}
-      {tab === 'raw' && (
-        <div className="anim-fade">
-          <div className="glass-panel">
-            <div className="glass-header">
-              <span>Raw API Response</span>
-              <CopyButton text={JSON.stringify(data, null, 2)} />
+      {/* Raw data */}
+      <div style={{ padding: '20px', background: 'var(--glass)', backdropFilter: 'var(--blur)', WebkitBackdropFilter: 'var(--blur)', border: '1px solid var(--b1)', borderRadius: 'var(--r-md)' }}>
+        <div style={{ marginBottom: 12, fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', color: 'var(--t3)', textTransform: 'uppercase' }}>Full Telemetry Snapshot</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 8 }}>
+          {Object.entries(train).filter(([k]) => k !== 'train_id').map(([key, val]) => (
+            <div key={key} style={{ padding: '8px 12px', background: 'var(--surface)', borderRadius: 'var(--r-sm)', border: '1px solid var(--b1)' }}>
+              <div style={{ fontSize: 9, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 3 }}>{key.replace(/_/g, ' ')}</div>
+              <div className="mono" style={{ fontSize: 12, color: 'var(--t1)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {val === null ? '—' : typeof val === 'number' ? val.toFixed ? val.toFixed(3) : val : String(val)}
+              </div>
             </div>
-            <div className="glass-content">
-              <pre style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.72rem', color: 'var(--cyan)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', lineHeight: 1.6 }}>
-                {JSON.stringify(data, null, 2)}
-              </pre>
-            </div>
-          </div>
+          ))}
         </div>
-      )}
+      </div>
     </div>
   )
 }

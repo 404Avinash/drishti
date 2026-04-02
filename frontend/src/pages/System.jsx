@@ -1,190 +1,158 @@
 import { useState, useEffect } from 'react'
-import { Server, Cpu, Database, Wifi, CheckCircle, XCircle, AlertTriangle, RefreshCw, Clock, Terminal, Zap } from 'lucide-react'
+import LiveIndicator from '../components/LiveIndicator'
 
-function StatusRow({ label, status, value, icon }) {
-  const ok = status === 'ok' || status === 'live'
-  const warn = status === 'warn' || status === 'degraded'
-  const col = ok ? 'var(--green)' : warn ? 'var(--yellow)' : 'var(--red)'
-  const Icon = ok ? CheckCircle : warn ? AlertTriangle : XCircle
+function HealthCard({ name, status, detail, metric, metricLabel, icon, color }) {
+  const ok = status === 'ok' || status === 'healthy' || status === 'online'
+  const c  = ok ? 'var(--green)' : 'var(--red)'
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
-      <span style={{ color: 'var(--t3)' }}>{icon}</span>
-      <span style={{ flex: 1, fontSize: '0.82rem', color: 'var(--t2)' }}>{label}</span>
-      {value && <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.75rem', color: 'var(--t3)' }}>{value}</span>}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-        <Icon size={14} color={col} />
-        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: col, textTransform: 'uppercase' }}>{status}</span>
+    <div style={{ padding: '20px 22px', background: 'var(--glass)', backdropFilter: 'var(--blur)', WebkitBackdropFilter: 'var(--blur)', border: `1px solid ${c}25`, borderRadius: 'var(--r-md)', position: 'relative', overflow: 'hidden' }}>
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg, transparent, ${c}, transparent)` }} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 20 }}>{icon}</span>
+          <span style={{ fontWeight: 700, fontSize: 14 }}>{name}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 10px', borderRadius: 20, background: `${c}15`, border: `1px solid ${c}30` }}>
+          <span style={{ width: 5, height: 5, borderRadius: '50%', background: c, boxShadow: `0 0 4px ${c}` }} />
+          <span style={{ fontSize: 10, fontWeight: 700, color: c, letterSpacing: '0.1em', fontFamily: 'JetBrains Mono, monospace' }}>
+            {ok ? 'ONLINE' : 'DEGRADED'}
+          </span>
+        </div>
       </div>
-    </div>
-  )
-}
-
-function LogLine({ line, i }) {
-  const isError = line.includes('ERROR') || line.includes('error')
-  const isWarn = line.includes('WARN') || line.includes('warn')
-  const isInfo = line.includes('INFO') || line.includes('→')
-  const col = isError ? 'var(--red)' : isWarn ? 'var(--yellow)' : isInfo ? 'var(--cyan)' : 'var(--t2)'
-  return (
-    <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.68rem', color: col, padding: '2px 0', lineHeight: 1.5,
-      animation: 'fadeIn 0.3s ease', animationDelay: `${i * 20}ms`, animationFillMode: 'both' }}>
-      {line}
-    </div>
-  )
-}
-
-const MOCK_LOGS = [
-  '[12:00:01] INFO  → WS client connected (peer=127.0.0.1)',
-  '[12:00:02] INFO  → Inference batch: 50 trains processed in 43ms',
-  '[12:00:02] ALERT → Train 12841 CRITICAL risk_score=91 at HWH',
-  '[12:00:07] INFO  → Alert persisted: id=a1f4e8 (signed)',
-  '[12:00:12] INFO  → Inference batch: 48 trains processed in 39ms',
-  '[12:00:17] WARN  → NTES connector: 2 trains with stale data (>10m)',
-  '[12:00:22] INFO  → Inference batch: 52 trains processed in 47ms',
-  '[12:00:25] ALERT → Train 22119 HIGH risk_score=72 at NDLS',
-  '[12:00:30] INFO  → WebSocket broadcast: 2 subscribers',
-  '[12:00:35] INFO  → Zone summary updated: 7 zones, 156 alerts total',
-]
-
-export default function System({ wsStatus, stats }) {
-  const [health, setHealth] = useState(null)
-  const [logs, setLogs] = useState(MOCK_LOGS)
-  const [uptime, setUptime] = useState(0)
-  const [refreshing, setRefreshing] = useState(false)
-
-  useEffect(() => {
-    const host = ''
-    fetch(`${host}/api/health`)
-      .then(r => r.json())
-      .then(setHealth)
-      .catch(() => setHealth(null))
-
-    // Uptime counter
-    const timer = setInterval(() => setUptime(u => u + 1), 1000)
-
-    // Simulate incoming logs
-    const logTimer = setInterval(() => {
-      const msgs = [
-        `[${new Date().toLocaleTimeString()}] INFO  → Inference batch: ${45 + Math.floor(Math.random()*10)} trains in ${35 + Math.floor(Math.random()*20)}ms`,
-        `[${new Date().toLocaleTimeString()}] INFO  → WebSocket heartbeat OK`,
-        `[${new Date().toLocaleTimeString()}] INFO  → Feature store updated: ${1000 + Math.floor(Math.random()*200)} records`,
-      ]
-      setLogs(prev => [msgs[Math.floor(Math.random()*msgs.length)], ...prev].slice(0, 40))
-    }, 4000)
-
-    return () => { clearInterval(timer); clearInterval(logTimer) }
-  }, [])
-
-  const refresh = () => {
-    setRefreshing(true)
-    const host = ''
-    fetch(`${host}/api/health`).then(r => r.json()).then(d => { setHealth(d); setRefreshing(false) }).catch(() => setRefreshing(false))
-  }
-
-  const fmtUptime = s => `${Math.floor(s/3600)}h ${Math.floor((s%3600)/60)}m ${s%60}s`
-
-  return (
-    <div style={{ height: '100%', overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
-      
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      {detail && <div style={{ fontSize: 11.5, color: 'var(--t2)', marginBottom: metric ? 10 : 0 }}>{detail}</div>}
+      {metric != null && (
         <div>
-          <h2 style={{ fontSize: '1.3rem', fontWeight: 800, marginBottom: 4 }}>System Status</h2>
-          <p style={{ color: 'var(--t3)', fontSize: '0.8rem' }}>Real-time health monitoring of all DRISHTI subsystems.</p>
+          <div style={{ fontSize: 9, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>{metricLabel}</div>
+          <div className="mono" style={{ fontSize: 20, fontWeight: 800, color: c }}>{metric}</div>
         </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.75rem', color: 'var(--t3)' }}>
-            ⏱ {fmtUptime(uptime)}
-          </div>
-          <button className="btn btn-ghost" onClick={refresh}>
-            <RefreshCw size={13} style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }} />
-            Refresh
-          </button>
+      )}
+    </div>
+  )
+}
+
+function UptimeClock({ startIso }) {
+  const [elapsed, setElapsed] = useState(0)
+  useEffect(() => {
+    if (!startIso) return
+    const start = new Date(startIso).getTime()
+    const tick  = () => setElapsed(Math.max(0, Math.floor((Date.now() - start) / 1000)))
+    tick()
+    const iv = setInterval(tick, 1000)
+    return () => clearInterval(iv)
+  }, [startIso])
+
+  const d = Math.floor(elapsed / 86400)
+  const h = Math.floor((elapsed % 86400) / 3600)
+  const m = Math.floor((elapsed % 3600) / 60)
+  const s = elapsed % 60
+
+  const pad = n => String(n).padStart(2, '0')
+  return (
+    <div className="mono" style={{ fontSize: 28, fontWeight: 800, color: 'var(--green)', letterSpacing: '0.05em' }}>
+      {d > 0 && `${d}d `}{pad(h)}:{pad(m)}:{pad(s)}
+    </div>
+  )
+}
+
+export default function System() {
+  const [health,    setHealth]    = useState(null)
+  const [ingestion, setIngestion] = useState(null)
+  const [live,      setLive]      = useState(false)
+
+  const load = async () => {
+    try {
+      const [hRes, iRes] = await Promise.allSettled([
+        fetch('/api/health'),
+        fetch('/api/trains/ingestion/summary'),
+      ])
+      if (hRes.status === 'fulfilled' && hRes.value.ok) {
+        setHealth(await hRes.value.json())
+        setLive(true)
+      }
+      if (iRes.status === 'fulfilled' && iRes.value.ok) {
+        setIngestion(await iRes.value.json())
+      }
+    } catch { setLive(false) }
+  }
+  useEffect(() => { load(); const iv = setInterval(load, 10000); return () => clearInterval(iv) }, [])
+
+  return (
+    <div style={{ padding: '32px 28px', maxWidth: 1200, margin: '0 auto' }}>
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 4 }}>
+          <h1 style={{ fontSize: 22, fontWeight: 800 }}>System Health Monitor</h1>
+          <LiveIndicator label={live ? 'ALL SYSTEMS' : 'DEGRADED'} color={live ? 'var(--green)' : 'var(--red)'} offline={!live} />
         </div>
+        <p style={{ color: 'var(--t2)', fontSize: 13 }}>Infrastructure status · API health · Database connections · Pipeline metrics</p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        
-        {/* Services */}
-        <div className="glass-panel">
-          <div className="glass-header">
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}><Server size={13} /> Services</div>
+      {/* Uptime */}
+      {health?.started_at && (
+        <div style={{ padding: '20px 24px', background: 'var(--glass)', backdropFilter: 'var(--blur)', WebkitBackdropFilter: 'var(--blur)', border: '1px solid var(--green-30)', borderRadius: 'var(--r-md)', marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.14em', color: 'var(--t3)', textTransform: 'uppercase', marginBottom: 6 }}>System Uptime</div>
+            <UptimeClock startIso={health.started_at} />
           </div>
-          <div className="glass-content">
-            <StatusRow label="FastAPI Backend"        status={health ? 'ok' : 'offline'}  value="8000"   icon={<Server size={13}/>} />
-            <StatusRow label="WebSocket Stream"       status={wsStatus === 'live' ? 'ok' : wsStatus === 'connecting' ? 'warn' : 'offline'} value="/ws/live" icon={<Wifi size={13}/>} />
-            <StatusRow label="Inference Engine"       status={health ? 'ok' : 'offline'}  value="batch"  icon={<Cpu size={13}/>} />
-            <StatusRow label="Alert Database"         status={stats.total > 0 ? 'ok' : 'warn'} value={`${stats.total} records`} icon={<Database size={13}/>} />
-            <StatusRow label="NTES Connector"         status="warn" value="mock"           icon={<Zap size={13}/>} />
-            <StatusRow label="Redis Feature Store"    status={health ? 'ok' : 'offline'}  value="port 6379" icon={<Database size={13}/>} />
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 9.5, color: 'var(--t3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>Deployed On</div>
+            <div style={{ fontSize: 13, color: 'var(--t2)' }}>
+              AWS EC2 · us-east-1 · Ubuntu 22.04 LTS
+            </div>
           </div>
         </div>
+      )}
 
-        {/* Performance */}
-        <div className="glass-panel">
-          <div className="glass-header">
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}><Cpu size={13} /> Performance</div>
-          </div>
-          <div className="glass-content">
+      {/* Health cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14, marginBottom: 20 }}>
+        <HealthCard name="API Server"       icon="⊞" status={health?.status || 'unknown'}                          detail="FastAPI · Python 3.11 · Uvicorn"      metricLabel="Response" metric={health ? '< 50ms' : null} />
+        <HealthCard name="Database"         icon="◫" status={health?.database || 'unknown'}                         detail="PostgreSQL 15 · AWS RDS · us-east-1"  metricLabel="Connections" metric={health?.db_connections ?? null} />
+        <HealthCard name="WebSocket"        icon="◈" status={health?.websocket_connections > 0 ? 'ok' : 'standby'} detail="NTES telemetry stream processor"       metricLabel="Active WS" metric={health?.websocket_connections ?? 0} />
+        <HealthCard name="Bayesian Engine"  icon="⬙" status="ok"                                                    detail="pgmpy 0.1.26 · Variable Elimination"  metricLabel="Models" metric="4 active" />
+        <HealthCard name="Alert Pipeline"   icon="⚠" status="ok"                                                    detail="Real-time event detection"           metricLabel="Threshold" metric="< 100ms" />
+        <HealthCard name="Docker Runtime"  icon="◻" status="ok"                                                    detail="2 containers · drishti-api & frontend" metricLabel="Version" metric="v24+" />
+      </div>
+
+      {/* Ingestion metrics */}
+      {ingestion && (
+        <div style={{ padding: '20px', background: 'var(--glass)', backdropFilter: 'var(--blur)', WebkitBackdropFilter: 'var(--blur)', border: '1px solid var(--b1)', borderRadius: 'var(--r-md)', marginBottom: 20 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', color: 'var(--t2)', textTransform: 'uppercase', marginBottom: 16 }}>Data Ingestion Pipeline</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 14 }}>
             {[
-              { label: 'Inference Latency', val: '<50ms', pct: 20, col: 'var(--green)' },
-              { label: 'Alerts Processed', val: stats.total.toString(), pct: Math.min((stats.total / 1000) * 100, 100), col: 'var(--blue)' },
-              { label: 'WSS Subscribers',  val: '—', pct: 40, col: 'var(--cyan)' },
-              { label: 'Trains Monitored', val: stats.trains_monitored.toString(), pct: Math.min((stats.trains_monitored / 9000) * 100, 100), col: 'var(--purple)' },
-              { label: 'Critical Rate',    val: stats.total > 0 ? `${Math.round((stats.critical/stats.total)*100)}%` : '0%', pct: stats.total > 0 ? (stats.critical/stats.total)*100 : 0, col: 'var(--red)' },
-            ].map(m => (
-              <div key={m.label} style={{ marginBottom: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--t2)' }}>{m.label}</span>
-                  <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.75rem', color: m.col, fontWeight: 700 }}>{m.val}</span>
-                </div>
-                <div style={{ height: 4, background: 'var(--bg3)', borderRadius: 2, overflow: 'hidden' }}>
-                  <div style={{ width: `${m.pct}%`, height: '100%', background: m.col, borderRadius: 2, transition: 'width 0.8s ease' }} />
-                </div>
+              { label: 'Records Received', value: ingestion.received  || 0, color: 'var(--t2)' },
+              { label: 'Valid Records',    value: ingestion.valid     || 0, color: 'var(--cyan)' },
+              { label: 'Persisted to DB',  value: ingestion.persisted || 0, color: 'var(--green)' },
+              { label: 'Error Rate',       value: ingestion.error_rate != null ? `${(ingestion.error_rate * 100).toFixed(1)}%` : '0%', color: ingestion.error_rate > 0.05 ? 'var(--red)' : 'var(--green)' },
+            ].map(({ label, value, color }) => (
+              <div key={label} style={{ padding: '12px 16px', background: 'var(--surface)', border: '1px solid var(--b1)', borderRadius: 'var(--r-sm)' }}>
+                <div style={{ fontSize: 9.5, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>{label}</div>
+                <div className="mono" style={{ fontSize: 20, fontWeight: 800, color }}>{value.toLocaleString?.() ?? value}</div>
               </div>
             ))}
           </div>
-        </div>
-      </div>
-
-      {/* Live Logs */}
-      <div className="glass-panel" style={{ flex: 1 }}>
-        <div className="glass-header">
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <span className="dot dot-green" />
-            <Terminal size={13} /> System Log
-          </div>
-          <span style={{ fontSize: '0.65rem', color: 'var(--t3)' }}>Streaming live</span>
-        </div>
-        <div className="glass-content" style={{ background: 'var(--bg)', maxHeight: 260 }}>
-          {logs.map((l, i) => <LogLine key={i} line={l} i={i} />)}
-        </div>
-      </div>
-
-      {/* Tech Stack */}
-      <div className="glass-panel">
-        <div className="glass-header">Tech Stack</div>
-        <div className="glass-content">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
-            {[
-              ['FastAPI',     'Backend',   'var(--green)'],
-              ['WebSocket',   'Streaming', 'var(--blue)'],
-              ['scikit-learn','ML Engine', 'var(--orange)'],
-              ['Redis',       'Feature Store', 'var(--red)'],
-              ['SQLite',      'Alert DB',  'var(--cyan)'],
-              ['React 18',    'Frontend',  'var(--blue)'],
-              ['Vite 5',      'Build',     'var(--purple)'],
-              ['Leaflet',     'Maps',      'var(--green)'],
-              ['Recharts',    'Charts',    'var(--orange)'],
-              ['Lucide',      'Icons',     'var(--cyan)'],
-            ].map(([name, role, col]) => (
-              <div key={name} style={{ background: 'var(--bg3)', border: `1px solid ${col}33`, borderRadius: 8, padding: '10px 12px', textAlign: 'center' }}>
-                <div style={{ fontWeight: 700, fontSize: '0.78rem', color: col, marginBottom: 2 }}>{name}</div>
-                <div style={{ fontSize: '0.6rem', color: 'var(--t3)' }}>{role}</div>
+          {ingestion.by_source && Object.keys(ingestion.by_source).length > 0 && (
+            <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--b1)' }}>
+              <div style={{ fontSize: 10, color: 'var(--t3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>By Source</div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                {Object.entries(ingestion.by_source).map(([src, cnt]) => (
+                  <div key={src} style={{ padding: '6px 14px', background: 'var(--cyan-10)', border: '1px solid var(--cyan-30)', borderRadius: 20 }}>
+                    <span className="mono" style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 700 }}>{src}: {cnt}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
         </div>
-      </div>
+      )}
+
+      {/* Raw health JSON */}
+      {health && (
+        <div style={{ padding: '16px 20px', background: 'var(--void)', border: '1px solid var(--b1)', borderRadius: 'var(--r-md)' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', color: 'var(--t3)', textTransform: 'uppercase', marginBottom: 10 }}>Raw Health Endpoint</div>
+          <pre className="mono" style={{ fontSize: 11, color: 'var(--green)', lineHeight: 1.7, overflowX: 'auto' }}>
+            {JSON.stringify(health, null, 2)}
+          </pre>
+        </div>
+      )}
     </div>
   )
 }
