@@ -1,445 +1,470 @@
-import { useState, useEffect, useRef } from 'react'
-import { Link } from 'react-router-dom'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  Shield, Activity, AlertTriangle, Map, Brain, TrendingUp,
-  ChevronRight, Zap, Target, Radio, Globe, ArrowRight
-} from 'lucide-react'
-import { getLiveStats, setupPolling, clearPolling } from '../api'
 
-// ── Animated counter ──────────────────────────────────────────────────────────
-function Counter({ to, suffix = '', duration = 2000 }) {
-  const [val, setVal] = useState(0)
-  const ref = useRef(null)
+/* ── Particle system ─────────────────────────────────────────── */
+function useParticles(canvasRef) {
   useEffect(() => {
-    const obs = new IntersectionObserver(([entry]) => {
-      if (!entry.isIntersecting) return
-      obs.disconnect()
-      let start = null
-      const step = ts => {
-        if (!start) start = ts
-        const progress = Math.min((ts - start) / duration, 1)
-        const ease = 1 - Math.pow(1 - progress, 3)
-        setVal(Math.floor(ease * to))
-        if (progress < 1) requestAnimationFrame(step)
-        else setVal(to)
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    let raf
+
+    const resize = () => {
+      canvas.width  = window.innerWidth
+      canvas.height = window.innerHeight
+    }
+    resize()
+    window.addEventListener('resize', resize)
+
+    /* Stars */
+    const stars = Array.from({ length: 200 }, () => ({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      r: Math.random() * 1.2 + 0.2,
+      speed: Math.random() * 0.3 + 0.05,
+      alpha: Math.random(),
+      dAlpha: (Math.random() * 0.008 + 0.003) * (Math.random() > 0.5 ? 1 : -1),
+    }))
+
+    /* Floating nodes */
+    const nodes = Array.from({ length: 28 }, () => ({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      vx: (Math.random() - 0.5) * 0.4,
+      vy: (Math.random() - 0.5) * 0.4,
+      r: Math.random() * 2.5 + 1,
+      alpha: Math.random() * 0.5 + 0.2,
+    }))
+
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+      /* Stars */
+      stars.forEach(s => {
+        s.alpha += s.dAlpha
+        if (s.alpha <= 0 || s.alpha >= 1) s.dAlpha *= -1
+        ctx.beginPath()
+        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2)
+        ctx.fillStyle = `rgba(200,220,255,${Math.max(0, Math.min(1, s.alpha))})`
+        ctx.fill()
+      })
+
+      /* Node connections */
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const dx = nodes[i].x - nodes[j].x
+          const dy = nodes[i].y - nodes[j].y
+          const dist = Math.sqrt(dx * dx + dy * dy)
+          if (dist < 160) {
+            ctx.beginPath()
+            ctx.moveTo(nodes[i].x, nodes[i].y)
+            ctx.lineTo(nodes[j].x, nodes[j].y)
+            ctx.strokeStyle = `rgba(0,212,255,${(1 - dist / 160) * 0.12})`
+            ctx.lineWidth = 0.8
+            ctx.stroke()
+          }
+        }
       }
-      requestAnimationFrame(step)
-    }, { threshold: 0.3 })
-    if (ref.current) obs.observe(ref.current)
-    return () => obs.disconnect()
-  }, [to, duration])
-  return <span ref={ref}>{val.toLocaleString()}{suffix}</span>
+
+      /* Nodes */
+      nodes.forEach(n => {
+        n.x += n.vx; n.y += n.vy
+        if (n.x < 0 || n.x > canvas.width)  n.vx *= -1
+        if (n.y < 0 || n.y > canvas.height) n.vy *= -1
+        ctx.beginPath()
+        ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2)
+        ctx.fillStyle = `rgba(0,212,255,${n.alpha * 0.6})`
+        ctx.fill()
+      })
+
+      raf = requestAnimationFrame(draw)
+    }
+    draw()
+
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('resize', resize)
+    }
+  }, [canvasRef])
 }
 
-// ── Accident timeline entry ───────────────────────────────────────────────────
-const TIMELINE = [
-  { year: '1981', name: 'Bihar Train Disaster', deaths: 800, code: 'PNBE', desc: 'Bagmati flood derailment — cyclone warning ignored' },
-  { year: '1995', name: 'Firozabad Double Collision', deaths: 358, code: 'FZD', desc: 'Kalindi Express hit stationary Purushottam while rescue teams were loading' },
-  { year: '1999', name: 'Gaisal Collision', deaths: 285, code: 'KISI', desc: 'Two express trains met head-on after signal error' },
-  { year: '2010', name: 'Sainthia Collision', deaths: 146, code: 'SNTI', desc: 'Vananchal Express passed red signal, hit stationary Uttarbanga Express' },
-  { year: '2016', name: 'Kanpur Derailment', deaths: 150, code: 'CNB', desc: 'Pukhrayan — faulty weld on track buckled under load' },
-  { year: '2023', name: 'Balasore (Coromandel)', deaths: 296, code: 'BLSR', desc: 'Signal system sent Coromandel to occupied loop line — 2 express trains + goods train' },
-]
+/* ── Typewriter hook ─────────────────────────────────────────── */
+function useTypewriter(text, speed = 40) {
+  const [displayed, setDisplayed] = useState('')
+  useEffect(() => {
+    setDisplayed('')
+    let i = 0
+    const timer = setInterval(() => {
+      i++
+      setDisplayed(text.slice(0, i))
+      if (i >= text.length) clearInterval(timer)
+    }, speed)
+    return () => clearInterval(timer)
+  }, [text, speed])
+  return displayed
+}
 
-// ── Feature card ──────────────────────────────────────────────────────────────
-function FeatureCard({ icon, title, desc, stat, link, linkLabel }) {
-  const navigate = useNavigate()
+/* ── Live ticker ─────────────────────────────────────────────── */
+function Ticker({ items }) {
+  const [idx, setIdx] = useState(0)
+  useEffect(() => {
+    if (!items.length) return
+    const t = setInterval(() => setIdx(i => (i + 1) % items.length), 3200)
+    return () => clearInterval(t)
+  }, [items.length])
+  if (!items.length) return null
   return (
-    <div
-      onClick={() => navigate(link)}
+    <div style={TS.wrap}>
+      <span style={TS.tag}>LIVE FEED</span>
+      <span style={TS.text} key={idx}>{items[idx]}</span>
+    </div>
+  )
+}
+const TS = {
+  wrap: {
+    display: 'flex', alignItems: 'center', gap: 12,
+    padding: '8px 20px',
+    background: 'rgba(0,212,255,.04)',
+    border: '1px solid var(--b1)',
+    borderRadius: 40, fontSize: 12, color: 'var(--t2)',
+    maxWidth: 560,
+  },
+  tag: {
+    fontSize: 9, fontWeight: 700, letterSpacing: '0.14em',
+    color: 'var(--cyan)', fontFamily: 'JetBrains Mono, monospace',
+    background: 'var(--cyan-10)', padding: '2px 8px',
+    borderRadius: 20, whiteSpace: 'nowrap',
+  },
+  text: {
+    animation: 'fade-in 400ms ease',
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  },
+}
+
+/* ── Feature card ────────────────────────────────────────────── */
+function FeatureCard({ icon, title, desc, color, to, badge }) {
+  const navigate = useNavigate()
+  const [hovered, setHovered] = useState(false)
+  return (
+    <button
+      onClick={() => navigate(to)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       style={{
-        background: 'rgba(255,255,255,0.03)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        borderRadius: 16, padding: 24, cursor: 'pointer',
-        transition: 'all 0.25s', display: 'flex', flexDirection: 'column', gap: 12,
-      }}
-      onMouseEnter={e => {
-        e.currentTarget.style.background = 'rgba(59,130,246,0.06)'
-        e.currentTarget.style.borderColor = 'rgba(59,130,246,0.35)'
-        e.currentTarget.style.transform = 'translateY(-3px)'
-      }}
-      onMouseLeave={e => {
-        e.currentTarget.style.background = 'rgba(255,255,255,0.03)'
-        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'
-        e.currentTarget.style.transform = 'translateY(0)'
+        ...FC.card,
+        borderColor: hovered ? `${color}44` : 'var(--b1)',
+        background: hovered ? `rgba(0,0,0,.3)` : 'rgba(0,0,0,.2)',
+        transform: hovered ? 'translateY(-4px)' : 'translateY(0)',
+        boxShadow: hovered ? `0 20px 40px ${color}22` : 'none',
       }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div style={{
-          width: 42, height: 42, background: 'rgba(59,130,246,0.12)',
-          border: '1px solid rgba(59,130,246,0.25)', borderRadius: 10,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3b82f6'
-        }}>
-          {icon}
+      <div style={{ ...FC.iconWrap, background: `${color}15`, border: `1px solid ${color}30` }}>
+        <span style={{ fontSize: 22, color }}>{icon}</span>
+      </div>
+      <div style={FC.title}>{title}</div>
+      <div style={FC.desc}>{desc}</div>
+      {badge && (
+        <div style={{ ...FC.badge, color, borderColor: `${color}40`, background: `${color}10` }}>
+          {badge}
         </div>
-        {stat && (
-          <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#3b82f6', fontFamily: 'var(--mono)' }}>{stat}</div>
-        )}
-      </div>
-      <div>
-        <div style={{ fontWeight: 700, fontSize: '1rem', color: '#f1f5f9', marginBottom: 6 }}>{title}</div>
-        <div style={{ fontSize: '0.82rem', color: '#94a3b8', lineHeight: 1.6 }}>{desc}</div>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#3b82f6', fontSize: '0.78rem', fontWeight: 600, marginTop: 'auto' }}>
-        {linkLabel || 'Open View'} <ArrowRight size={13} />
-      </div>
+      )}
+      <div style={{ ...FC.arrow, color }}>→</div>
+    </button>
+  )
+}
+const FC = {
+  card: {
+    flex: '1 1 200px', minWidth: 200, maxWidth: 300,
+    padding: '28px 24px 22px',
+    background: 'rgba(0,0,0,.2)',
+    border: '1px solid var(--b1)',
+    borderRadius: 'var(--r-lg)',
+    cursor: 'pointer',
+    textAlign: 'left',
+    backdropFilter: 'blur(20px)',
+    WebkitBackdropFilter: 'blur(20px)',
+    transition: 'all 280ms cubic-bezier(.25,.8,.25,1)',
+    display: 'flex', flexDirection: 'column', gap: 10,
+    position: 'relative',
+  },
+  iconWrap: {
+    width: 48, height: 48, borderRadius: 14,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+  },
+  title: {
+    fontSize: 16, fontWeight: 700, color: 'var(--t1)', letterSpacing: '0.02em',
+  },
+  desc: {
+    fontSize: 12.5, color: 'var(--t2)', lineHeight: 1.6, flex: 1,
+  },
+  badge: {
+    display: 'inline-block', fontSize: 9.5, fontWeight: 700,
+    letterSpacing: '0.12em', textTransform: 'uppercase',
+    padding: '3px 10px', borderRadius: 20, border: '1px solid',
+    fontFamily: 'JetBrains Mono, monospace',
+    width: 'fit-content',
+  },
+  arrow: {
+    position: 'absolute', bottom: 22, right: 24,
+    fontSize: 16, fontWeight: 700,
+  },
+}
+
+/* ── Metric pill ─────────────────────────────────────────────── */
+function MetricPill({ label, value, color }) {
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+      padding: '14px 28px',
+      background: `${color}08`,
+      border: `1px solid ${color}25`,
+      borderRadius: 'var(--r-md)',
+    }}>
+      <span style={{ fontSize: 28, fontWeight: 800, color, fontFamily: 'JetBrains Mono, monospace' }}>
+        {value}
+      </span>
+      <span style={{ fontSize: 9.5, fontWeight: 700, color: 'var(--t3)', letterSpacing: '0.14em', textTransform: 'uppercase' }}>
+        {label}
+      </span>
     </div>
   )
 }
 
+/* ── Main Home ───────────────────────────────────────────────── */
 export default function Home() {
-  const [liveStats, setLiveStats] = useState({ total: 0, critical: 0, trains: 9182, nodes: 51 })
-  const navigate = useNavigate()
+  const navigate  = useNavigate()
+  const canvasRef = useRef(null)
+  const [stats, setStats]     = useState({ trains: 0, nodes: 51, critical: 0, alerts: 0 })
+  const [tickItems, setTickItems] = useState(['Initializing DRISHTI intelligence grid...'])
+  const headline = useTypewriter('India\'s Railway Safety Intelligence Platform', 28)
+
+  useParticles(canvasRef)
 
   useEffect(() => {
-    // Fetch live stats from DB-backed API instead of WebSocket
-    const pollId = setupPolling(setLiveStats, getLiveStats, 5000)
-    return () => clearPolling(pollId)
+    const load = async () => {
+      try {
+        const [trainsRes, alertsRes] = await Promise.allSettled([
+          fetch('/api/trains/current'),
+          fetch('/api/alerts/history?limit=20'),
+        ])
+        let trains = [], alerts = []
+        if (trainsRes.status === 'fulfilled' && trainsRes.value.ok) {
+          trains = await trainsRes.value.json()
+        }
+        if (alertsRes.status === 'fulfilled' && alertsRes.value.ok) {
+          alerts = await alertsRes.value.json()
+        }
+        const critical = Array.isArray(trains) ? trains.filter(t => t.stress_level === 'CRITICAL').length : 0
+        setStats({
+          trains:   Array.isArray(trains) ? trains.length : 0,
+          nodes:    51,
+          critical,
+          alerts:   Array.isArray(alerts) ? alerts.length : 0,
+        })
+        const items = [
+          `Monitoring ${Array.isArray(trains) ? trains.length : 0} active trains across 9,000+ routes`,
+          `51 high-centrality junctions under continuous AI surveillance`,
+          `Bayesian Network inference latency: < 100ms`,
+          `CRS accident signature matching active`,
+          `Zone controllers: NR · SR · ER · WR · CR · SER · NFR · NWR · SCR`,
+          ...(Array.isArray(alerts) && alerts.length
+            ? [`${alerts.length} safety events recorded in last 24 hours`]
+            : ['Network stable — no critical events detected']),
+        ]
+        setTickItems(items)
+      } catch { /* silent */ }
+    }
+    load()
+    const iv = setInterval(load, 30000)
+    return () => clearInterval(iv)
   }, [])
 
   return (
-    <div style={{ overflowY: 'auto', height: '100%', background: '#020817', color: '#f1f5f9', fontFamily: 'Inter, sans-serif' }}>
+    <div style={S.root}>
+      {/* Particle canvas */}
+      <canvas ref={canvasRef} style={S.canvas} />
 
-      {/* ── HERO ─────────────────────────────────────────────────────────── */}
-      <div style={{
-        minHeight: '92vh', display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center',
-        position: 'relative', overflow: 'hidden', padding: '60px 40px',
-        textAlign: 'center',
-      }}>
-        {/* Background glow */}
-        <div style={{
-          position: 'absolute', inset: 0, zIndex: 0,
-          background: 'radial-gradient(ellipse 80% 60% at 50% 40%, rgba(59,130,246,0.08) 0%, transparent 70%)',
-          pointerEvents: 'none',
-        }} />
-        {/* Grid lines */}
-        <div style={{
-          position: 'absolute', inset: 0, zIndex: 0,
-          backgroundImage: 'linear-gradient(rgba(59,130,246,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(59,130,246,0.04) 1px, transparent 1px)',
-          backgroundSize: '60px 60px', pointerEvents: 'none',
-        }} />
+      {/* Radial glow */}
+      <div style={S.glow1} />
+      <div style={S.glow2} />
 
-        <div style={{ position: 'relative', zIndex: 1, maxWidth: 860 }}>
-          {/* Badge */}
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 32,
-            background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)',
-            borderRadius: 30, padding: '6px 16px',
-          }}>
-            <span style={{ width: 7, height: 7, background: '#22c55e', borderRadius: '50%', boxShadow: '0 0 8px #22c55e' }} />
-            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#3b82f6', letterSpacing: 1 }}>
-              LIVE · {liveStats.nodes} JUNCTIONS MONITORED · {liveStats.trains.toLocaleString()} TRAINS TRACKED
-            </span>
+      {/* Scan line */}
+      <div style={S.scanLine} />
+
+      {/* Content */}
+      <div style={S.content}>
+
+        {/* Badge */}
+        <div style={{ animation: 'slide-up 600ms ease 100ms both' }}>
+          <div style={S.badge}>
+            <span style={S.badgeDot} />
+            OPERATIONAL · PHASE II PRODUCTION
           </div>
+        </div>
 
-          {/* Main title */}
-          <h1 style={{
-            fontSize: 'clamp(2.8rem, 6vw, 5rem)',
-            fontWeight: 900, lineHeight: 1.08, letterSpacing: '-0.02em',
-            marginBottom: 24, color: 'white',
-          }}>
-            India's Railway<br />
-            <span style={{
-              background: 'linear-gradient(135deg, #3b82f6, #8b5cf6, #06b6d4)',
-              WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text',
-            }}>
-              Doesn't Have a Nerve System.
-            </span>
-            <br />
-            <span style={{ color: '#f1f5f9' }}>We Built One.</span>
-          </h1>
+        {/* Logo */}
+        <div style={{ animation: 'slide-up 700ms ease 200ms both' }}>
+          <div style={S.logo}>DRISHTI</div>
+          <div style={S.logoSub}>NATIONAL RAILWAY GRID</div>
+        </div>
 
-          <p style={{
-            fontSize: 'clamp(1rem, 2vw, 1.2rem)', color: '#94a3b8',
-            lineHeight: 1.75, maxWidth: 680, margin: '0 auto 40px',
-          }}>
-            9,182 trains. 67,000 km of track. 18 zone controllers — each watching their section.
-            <strong style={{ color: '#f1f5f9' }}> Nobody watching the network.</strong>
-            <br />
-            DRISHTI is India's NERC. Built on data that already exists.
+        {/* Headline */}
+        <div style={{ animation: 'slide-up 700ms ease 300ms both' }}>
+          <p style={S.headline}>{headline}<span style={S.cursor}>│</span></p>
+        </div>
+
+        {/* Metrics */}
+        <div style={{ ...S.metrics, animation: 'slide-up 700ms ease 450ms both' }}>
+          <MetricPill label="Trains Monitored" value={stats.trains} color="var(--cyan)" />
+          <MetricPill label="Junction Nodes"   value={stats.nodes}  color="var(--purple)" />
+          <MetricPill label="Critical Alerts"  value={stats.critical} color="var(--red)" />
+          <MetricPill label="Zone Coverage"    value="9 / 9"         color="var(--green)" />
+        </div>
+
+        {/* Ticker */}
+        <div style={{ animation: 'slide-up 700ms ease 550ms both' }}>
+          <Ticker items={tickItems} />
+        </div>
+
+        {/* CTA buttons */}
+        <div style={{ ...S.ctaRow, animation: 'slide-up 700ms ease 650ms both' }}>
+          <button style={S.ctaPrimary} onClick={() => navigate('/dashboard')}
+            onMouseEnter={e => e.currentTarget.style.boxShadow = '0 0 40px rgba(0,212,255,.5)'}
+            onMouseLeave={e => e.currentTarget.style.boxShadow = '0 0 20px rgba(0,212,255,.25)'}>
+            ENTER COMMAND CENTER →
+          </button>
+        </div>
+
+        {/* Feature cards */}
+        <div style={{ ...S.cards, animation: 'slide-up 700ms ease 750ms both' }}>
+          <FeatureCard
+            icon="◎"
+            title="Network Intelligence"
+            desc="Real-time graph of India's 51 most critical railway junctions with live stress overlays and cascade risk visualization."
+            color="var(--cyan)"
+            to="/network"
+            badge="51 NODES LIVE"
+          />
+          <FeatureCard
+            icon="⚠"
+            title="Alert Command"
+            desc="Live safety alerts, CRS historical signature matching, and AI-generated incident explanations across all zones."
+            color="var(--orange)"
+            to="/alerts"
+            badge="REAL-TIME"
+          />
+          <FeatureCard
+            icon="⬙"
+            title="AI Bayesian Brain"
+            desc="Probabilistic graphical model for exact inference on operational risks. SHAP-powered explainability for every prediction."
+            color="var(--purple)"
+            to="/ai"
+            badge="PGMPY ENGINE"
+          />
+        </div>
+
+        {/* Footer */}
+        <div style={{ animation: 'fade-in 1s ease 1s both' }}>
+          <p style={S.footer}>
+            DRISHTI v2.0 · Deployed on AWS · us-east-1 · Protected by Bayesian Safety Net
           </p>
-
-          {/* CTAs */}
-          <div style={{ display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <button
-              onClick={() => navigate('/network')}
-              style={{
-                background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
-                color: 'white', border: 'none', borderRadius: 12,
-                padding: '14px 32px', fontWeight: 700, fontSize: '1rem',
-                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
-                boxShadow: '0 8px 32px rgba(37,99,235,0.4)',
-                transition: 'all 0.2s',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 12px 40px rgba(37,99,235,0.5)' }}
-              onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 8px 32px rgba(37,99,235,0.4)' }}
-            >
-              <Activity size={18} /> Open Command Center
-            </button>
-            <button
-              onClick={() => navigate('/map')}
-              style={{
-                background: 'rgba(255,255,255,0.05)', color: '#f1f5f9',
-                border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12,
-                padding: '14px 32px', fontWeight: 600, fontSize: '1rem',
-                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
-                transition: 'all 0.2s',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
-            >
-              <Globe size={18} /> Live Network Map
-            </button>
-          </div>
-        </div>
-
-        {/* Scroll cue */}
-        <div style={{
-          position: 'absolute', bottom: 32, left: '50%', transform: 'translateX(-50%)',
-          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
-          animation: 'float 2s ease-in-out infinite', color: 'rgba(148,163,184,0.5)',
-          fontSize: '0.7rem', letterSpacing: 2,
-        }}>
-          <span>SCROLL</span>
-          <div style={{ width: 1, height: 40, background: 'linear-gradient(to bottom, rgba(59,130,246,0.5), transparent)' }} />
-        </div>
-      </div>
-
-      {/* ── THE HYPOTHESIS ────────────────────────────────────────────── */}
-      <div style={{ padding: '80px 40px', maxWidth: 1100, margin: '0 auto' }}>
-        <div style={{
-          background: 'linear-gradient(135deg, rgba(59,130,246,0.06), rgba(139,92,246,0.04))',
-          border: '1px solid rgba(59,130,246,0.2)',
-          borderRadius: 20, padding: '48px 56px',
-        }}>
-          <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-            <div style={{
-              background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
-              borderRadius: 10, padding: '6px 12px', fontSize: '0.7rem',
-              fontWeight: 700, color: '#ef4444', letterSpacing: 1,
-              flexShrink: 0, alignSelf: 'flex-start', marginTop: 4,
-            }}>
-              THE RESEARCH HYPOTHESIS
-            </div>
-            <div>
-              <h2 style={{ fontSize: 'clamp(1.5rem, 3vw, 2.2rem)', fontWeight: 800, lineHeight: 1.3, marginBottom: 20, color: 'white' }}>
-                "Accidents don't happen randomly. They cluster on structurally critical junctions — and the data shows the warning 72 hours before."
-              </h2>
-              <p style={{ fontSize: '1rem', color: '#94a3b8', lineHeight: 1.8, maxWidth: 700 }}>
-                Using graph-theoretic betweenness centrality on the IR network, DRISHTI identifies 
-                the junctions where a failure cascades to the most trains. Cross-referencing 40 years 
-                of CRS accident records, we found: <strong style={{ color: '#f1f5f9' }}>major accidents 
-                cluster on high-centrality nodes at a rate 4× greater than chance</strong> (p &lt; 0.001).
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── LIVE STATS BAR ────────────────────────────────────────────── */}
-      <div style={{ padding: '0 40px 80px', maxWidth: 1100, margin: '0 auto' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
-          {[
-            { label: 'Trains Monitored', val: 9182, suffix: '', col: '#3b82f6', icon: <Zap size={20}/> },
-            { label: 'Network Junctions', val: 51, suffix: '', col: '#8b5cf6', icon: <Target size={20}/> },
-            { label: 'CRS Accidents in DB', val: 40, suffix: '+yrs', col: '#ef4444', icon: <Shield size={20}/> },
-            { label: 'Avg Alert Latency', val: 45, suffix: 'ms', col: '#22c55e', icon: <Activity size={20}/> },
-          ].map(s => (
-            <div key={s.label} style={{
-              background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
-              borderRadius: 16, padding: '28px 24px', textAlign: 'center',
-            }}>
-              <div style={{ color: s.col, marginBottom: 12, display: 'flex', justifyContent: 'center' }}>{s.icon}</div>
-              <div style={{ fontSize: 'clamp(2rem, 3vw, 2.8rem)', fontWeight: 900, color: s.col, fontFamily: 'var(--mono)', lineHeight: 1 }}>
-                <Counter to={s.val} suffix={s.suffix} />
-              </div>
-              <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: 8, fontWeight: 500 }}>{s.label}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* ── THE PROBLEM ───────────────────────────────────────────────── */}
-      <div style={{ padding: '0 40px 80px', maxWidth: 1100, margin: '0 auto' }}>
-        <div style={{ textAlign: 'center', marginBottom: 48 }}>
-          <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#3b82f6', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 12 }}>The Problem</div>
-          <h2 style={{ fontSize: 'clamp(1.8rem, 3.5vw, 2.8rem)', fontWeight: 800, color: 'white', lineHeight: 1.2 }}>
-            Every Major Disaster Had a Warning.<br />Nobody Was Looking at the Network.
-          </h2>
-        </div>
-
-        {/* Timeline */}
-        <div style={{ position: 'relative', paddingLeft: 40 }}>
-          <div style={{
-            position: 'absolute', left: 15, top: 8, bottom: 8,
-            width: 2, background: 'linear-gradient(to bottom, #ef4444, rgba(239,68,68,0.1))',
-          }} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-            {TIMELINE.map((item, i) => (
-              <div key={i} style={{
-                display: 'flex', gap: 24, padding: '20px 0',
-                borderBottom: i < TIMELINE.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
-                alignItems: 'flex-start',
-              }}>
-                <div style={{
-                  position: 'absolute', left: 9, width: 14, height: 14,
-                  background: '#ef4444', borderRadius: '50%',
-                  border: '2px solid #020817', flexShrink: 0,
-                  marginTop: 5, boxShadow: '0 0 8px rgba(239,68,68,0.5)',
-                }} />
-                <div style={{ display: 'flex', gap: 24, flex: 1, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                  <div style={{ minWidth: 48 }}>
-                    <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#ef4444', fontFamily: 'var(--mono)' }}>{item.year}</div>
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4, flexWrap: 'wrap' }}>
-                      <span style={{ fontWeight: 700, color: '#f1f5f9', fontSize: '0.95rem' }}>{item.name}</span>
-                      <span style={{
-                        background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
-                        color: '#ef4444', fontSize: '0.62rem', fontWeight: 700,
-                        padding: '2px 8px', borderRadius: 4, whiteSpace: 'nowrap',
-                      }}>
-                        {item.deaths.toLocaleString()} deaths
-                      </span>
-                      <span style={{ fontSize: '0.62rem', color: '#475569', fontFamily: 'var(--mono)' }}>{item.code}</span>
-                    </div>
-                    <div style={{ fontSize: '0.82rem', color: '#64748b', lineHeight: 1.6 }}>{item.desc}</div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* ── WHAT DRISHTI DOES ─────────────────────────────────────────── */}
-      <div style={{
-        padding: '80px 40px', maxWidth: 1100, margin: '0 auto',
-        borderTop: '1px solid rgba(255,255,255,0.06)',
-      }}>
-        <div style={{ textAlign: 'center', marginBottom: 48 }}>
-          <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#3b82f6', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 12 }}>The Solution</div>
-          <h2 style={{ fontSize: 'clamp(1.8rem, 3.5vw, 2.8rem)', fontWeight: 800, color: 'white', lineHeight: 1.2 }}>
-            4 Layers. 1 System. Real-Time Answers.
-          </h2>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16 }}>
-          <FeatureCard
-            icon={<Map size={20}/>}
-            title="Layer 1: Network Map"
-            stat="51"
-            desc="D3 force graph of 51 high-centrality IR junctions. Node size = betweenness centrality. Bigger node = network collapse ripples farther if it fails."
-            link="/map"
-            linkLabel="View Live Map"
-          />
-          <FeatureCard
-            icon={<Radio size={20}/>}
-            title="Layer 2: Cascade Pulse"
-            stat="5s"
-            desc="Every 5 seconds, delay propagation is simulated across the network. Click any node to see T+15min, T+30min, T+2hr downstream cascade forecast."
-            link="/network"
-            linkLabel="Open Pulse"
-          />
-          <FeatureCard
-            icon={<Brain size={20}/>}
-            title="Layer 3: CRS Intelligence"
-            stat="11"
-            desc="11 real pre-accident signatures from CRS corpus (1981–2023). When a junction's state matches a historical pre-accident pattern — you get an alert before the accident."
-            link="/network"
-            linkLabel="View Signatures"
-          />
-          <FeatureCard
-            icon={<AlertTriangle size={20}/>}
-            title="Layer 4: Alert Engine"
-            stat="4×"
-            desc="4-model ensemble: Bayesian Network + Isolation Forest + Causal DAG + DBSCAN. When 2+ models agree — it fires. Sub-100ms latency. Ed25519 signed."
-            link="/alerts"
-            linkLabel="Live Alerts"
-          />
-        </div>
-      </div>
-
-      {/* ── VS COMPARISON ─────────────────────────────────────────────── */}
-      <div style={{ padding: '0 40px 80px', maxWidth: 1100, margin: '0 auto' }}>
-        <div style={{
-          background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)',
-          borderRadius: 20, overflow: 'hidden',
-        }}>
-          <div style={{
-            display: 'grid', gridTemplateColumns: '1fr 1fr',
-            borderBottom: '1px solid rgba(255,255,255,0.06)',
-          }}>
-            <div style={{ padding: '20px 28px', borderRight: '1px solid rgba(255,255,255,0.06)' }}>
-              <div style={{ fontWeight: 700, color: '#64748b', fontSize: '0.85rem' }}>❌ Without DRISHTI</div>
-            </div>
-            <div style={{ padding: '20px 28px' }}>
-              <div style={{ fontWeight: 700, color: '#22c55e', fontSize: '0.85rem' }}>✅ With DRISHTI</div>
-            </div>
-          </div>
-          {[
-            ['Zone controller sees 1 section only', 'Command sees entire 9,000-train network at once'],
-            ['Delay is reported after it happens', 'Cascade predicted 30 minutes before it propagates'],
-            ['No pattern recognition across decades', 'Balasore 2023 signature flagged if it re-appears'],
-            ['Alert: "Train 12601 is 45 min late"', 'Alert: "BLSR matches Coromandel pre-accident signature at 76%"'],
-            ['Manual handover between zones', 'Automated cross-zone cascade forecast + intervention recommendation'],
-          ].map(([before, after], i) => (
-            <div key={i} style={{
-              display: 'grid', gridTemplateColumns: '1fr 1fr',
-              borderBottom: i < 4 ? '1px solid rgba(255,255,255,0.04)' : 'none',
-            }}>
-              <div style={{ padding: '16px 28px', borderRight: '1px solid rgba(255,255,255,0.05)', fontSize: '0.85rem', color: '#64748b', lineHeight: 1.5 }}>{before}</div>
-              <div style={{ padding: '16px 28px', fontSize: '0.85rem', color: '#94a3b8', lineHeight: 1.5 }}>{after}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* ── CTA ───────────────────────────────────────────────────────── */}
-      <div style={{
-        padding: '80px 40px', textAlign: 'center',
-        borderTop: '1px solid rgba(255,255,255,0.06)',
-      }}>
-        <h2 style={{ fontSize: 'clamp(1.8rem, 3vw, 2.5rem)', fontWeight: 800, color: 'white', marginBottom: 16 }}>
-          The network is live. The data is real.
-        </h2>
-        <p style={{ color: '#64748b', marginBottom: 40, fontSize: '1rem' }}>
-          Open the command center to see the current state of the Indian Railways network.
-        </p>
-        <button
-          onClick={() => navigate('/network')}
-          style={{
-            background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
-            color: 'white', border: 'none', borderRadius: 12,
-            padding: '16px 40px', fontWeight: 700, fontSize: '1.05rem',
-            cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 10,
-            boxShadow: '0 12px 40px rgba(37,99,235,0.4)', transition: 'all 0.2s',
-          }}
-          onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 16px 48px rgba(37,99,235,0.5)' }}
-          onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 12px 40px rgba(37,99,235,0.4)' }}
-        >
-          <Activity size={20} /> Enter Command Center <ChevronRight size={18}/>
-        </button>
-        <div style={{ marginTop: 16, fontSize: '0.72rem', color: '#475569' }}>
-          No login required · Live data · Open source
-        </div>
-      </div>
-
-      {/* Footer */}
-      <div style={{
-        borderTop: '1px solid rgba(255,255,255,0.06)', padding: '24px 40px',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        fontSize: '0.72rem', color: '#475569', flexWrap: 'wrap', gap: 12,
-      }}>
-        <div>DRISHTI · India's Railway Cascade Intelligence System</div>
-        <div style={{ display: 'flex', gap: 20 }}>
-          {['404Avinash/drishti', 'CRS Reports 1981–2023', 'NetworkX + FastAPI + React'].map(t => (
-            <span key={t} style={{ color: '#334155' }}>{t}</span>
-          ))}
         </div>
       </div>
     </div>
   )
+}
+
+const S = {
+  root: {
+    position: 'relative', minHeight: '100vh',
+    background: 'var(--void)',
+    display: 'flex', flexDirection: 'column',
+    alignItems: 'center', justifyContent: 'center',
+    overflow: 'hidden', padding: '60px 24px',
+  },
+  canvas: {
+    position: 'absolute', inset: 0,
+    pointerEvents: 'none', zIndex: 0,
+  },
+  glow1: {
+    position: 'absolute', top: '-15%', left: '50%',
+    transform: 'translateX(-50%)',
+    width: 800, height: 800,
+    background: 'radial-gradient(circle, rgba(0,212,255,.08) 0%, transparent 65%)',
+    pointerEvents: 'none', zIndex: 1,
+  },
+  glow2: {
+    position: 'absolute', bottom: '0%', right: '-10%',
+    width: 500, height: 500,
+    background: 'radial-gradient(circle, rgba(123,147,255,.06) 0%, transparent 65%)',
+    pointerEvents: 'none', zIndex: 1,
+  },
+  scanLine: {
+    position: 'absolute', left: 0, right: 0, height: 1,
+    background: 'linear-gradient(90deg, transparent, rgba(0,212,255,.15), transparent)',
+    animation: 'scan-line 6s linear infinite',
+    pointerEvents: 'none', zIndex: 2,
+  },
+  content: {
+    position: 'relative', zIndex: 10,
+    display: 'flex', flexDirection: 'column',
+    alignItems: 'center', gap: 32,
+    maxWidth: 1100, width: '100%',
+    textAlign: 'center',
+  },
+  badge: {
+    display: 'inline-flex', alignItems: 'center', gap: 8,
+    padding: '5px 16px', borderRadius: 40,
+    background: 'var(--cyan-10)', border: '1px solid var(--cyan-30)',
+    color: 'var(--cyan)', fontSize: 10, fontWeight: 700,
+    letterSpacing: '0.16em', fontFamily: 'JetBrains Mono, monospace',
+  },
+  badgeDot: {
+    width: 6, height: 6, borderRadius: '50%',
+    background: 'var(--cyan)',
+    boxShadow: '0 0 8px var(--cyan)',
+    animation: 'pulse-dot 1.5s ease-in-out infinite',
+  },
+  logo: {
+    fontSize: 'clamp(56px, 10vw, 96px)',
+    fontWeight: 900, letterSpacing: '0.18em',
+    color: 'var(--cyan)',
+    textShadow: '0 0 40px rgba(0,212,255,.6), 0 0 80px rgba(0,212,255,.2)',
+    fontFamily: 'Inter, sans-serif',
+    lineHeight: 1,
+    animation: 'glow-pulse 3s ease-in-out infinite',
+  },
+  logoSub: {
+    fontSize: 12, letterSpacing: '0.38em', color: 'var(--t3)',
+    fontWeight: 600, textTransform: 'uppercase', marginTop: 4,
+  },
+  headline: {
+    fontSize: 'clamp(14px, 2.2vw, 20px)',
+    color: 'var(--t2)', fontWeight: 400, lineHeight: 1.5,
+    maxWidth: 600,
+  },
+  cursor: {
+    color: 'var(--cyan)', animation: 'glow-pulse 1s ease-in-out infinite',
+  },
+  metrics: {
+    display: 'flex', gap: 12, flexWrap: 'wrap',
+    justifyContent: 'center',
+  },
+  ctaRow: { display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center' },
+  ctaPrimary: {
+    padding: '14px 36px',
+    background: 'linear-gradient(135deg, var(--cyan), #0099cc)',
+    color: '#000', fontWeight: 800, fontSize: 13,
+    letterSpacing: '0.12em', borderRadius: 'var(--r-md)',
+    cursor: 'pointer', border: 'none',
+    boxShadow: '0 0 20px rgba(0,212,255,.25)',
+    transition: 'all 200ms ease',
+  },
+  cards: {
+    display: 'flex', gap: 16, flexWrap: 'wrap', justifyContent: 'center',
+    width: '100%',
+  },
+  footer: {
+    fontSize: 11, color: 'var(--t3)', letterSpacing: '0.08em',
+  },
 }
