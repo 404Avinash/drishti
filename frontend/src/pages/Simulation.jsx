@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Circle } from 'react-leaflet';
+import React, { useState, useEffect, useRef } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, Circle, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import './Simulation.css';
 
@@ -94,15 +94,12 @@ export default function Simulation() {
     }
   ];
 
-  // Balasore railway zone info
-  const balasoreZone = {
-    center: [21.4966, 87.0774],
-    zoom: 8,
-    name: 'South Eastern Railway Zone',
-    region: 'Odisha',
-    dailyTrains: 127,
-    criticalJunctions: 12,
-    historicalIncidents: 4
+  // India map zone - shows full country initially
+  const indiaZone = {
+    center: [20.5937, 78.9629],  // Geographic center of India
+    zoom: 5,  // Shows all of India
+    name: 'Indian Railways - Full Network',
+    region: 'All Zones'
   };
 
   // Initialize trains
@@ -498,56 +495,67 @@ export default function Simulation() {
                 <p className="map-subtitle">Click incidents to explore detailed analysis</p>
               </div>
               <div className="leaflet-wrapper">
-                <MapContainer
-                  center={balasoreZone.center}
-                  zoom={balasoreZone.zoom}
-                  style={{ height: '100%', width: '100%' }}
-                  className="map-container-leaflet"
-                >
-                  <TileLayer
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    attribution='&copy; OpenStreetMap contributors'
-                  />
+                {/* Map Updater Component */}
+                {(() => {
+                  function MapUpdater({ selectedIncident }) {
+                    const map = useMap();
+                    
+                    useEffect(() => {
+                      if (selectedIncident) {
+                        // Zoom to incident location with animation
+                        map.flyTo(selectedIncident.coordinates, 8, {
+                          duration: 1.5
+                        });
+                      }
+                    }, [selectedIncident, map]);
+                    
+                    return null;
+                  }
                   
-                  {/* Balasore Focus Circle - Animated */}
-                  <Circle
-                    center={balasoreZone.center}
-                    radius={80000}
-                    fillColor="#FF6B6B"
-                    weight={3}
-                    opacity={1}
-                    fillOpacity={0.15}
-                    color="#FF6B6B"
-                  />
+                  return (
+                    <MapContainer
+                      center={indiaZone.center}
+                      zoom={indiaZone.zoom}
+                      style={{ height: '100%', width: '100%' }}
+                      className="map-container-leaflet"
+                    >
+                      <TileLayer
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                        attribution='&copy; OpenStreetMap contributors'
+                      />
+                      
+                      <MapUpdater selectedIncident={selectedIncident} />
 
-                  {/* Historical Incidents Markers - Custom Icons */}
-                  {historicalIncidents.map((incident, idx) => {
-                    const colors = ['#FF6B6B', '#FF9800', '#9C27B0', '#00BCD4'];
-                    const color = colors[idx % colors.length];
-                    return (
-                      <Marker
-                        key={incident.id}
-                        position={incident.coordinates}
-                        icon={L.divIcon({
-                          html: `<div class="custom-marker" style="background: ${color}; box-shadow: 0 0 20px ${color}80;"><span>📍</span></div>`,
-                          className: 'custom-marker-container',
-                          iconSize: [50, 50],
-                          iconAnchor: [25, 50],
-                          popupAnchor: [0, -50],
-                        })}
-                        onClick={() => setSelectedIncident(incident)}
-                      >
-                        <Popup className="custom-popup">
-                          <div className="popup-content">
-                            <strong>{incident.name}</strong><br />
-                            <span style={{fontSize: '11px'}}>{incident.date}</span><br />
-                            <span style={{fontSize: '12px', fontWeight: 'bold', color: color}}>{incident.deaths} deaths</span>
-                          </div>
-                        </Popup>
-                      </Marker>
-                    );
-                  })}
-                </MapContainer>
+                          {/* Historical Incidents Markers - Custom Icons */}
+                      {historicalIncidents.map((incident, idx) => {
+                        const colors = ['#FF6B6B', '#FF9800', '#9C27B0', '#00BCD4'];
+                        const color = colors[idx % colors.length];
+                        return (
+                          <Marker
+                            key={incident.id}
+                            position={incident.coordinates}
+                            icon={L.divIcon({
+                              html: `<div class="custom-marker" style="background: ${color}; box-shadow: 0 0 20px ${color}80;"><span>📍</span></div>`,
+                              className: 'custom-marker-container',
+                              iconSize: [50, 50],
+                              iconAnchor: [25, 50],
+                              popupAnchor: [0, -50],
+                            })}
+                            onClick={() => setSelectedIncident(incident)}
+                          >
+                            <Popup className="custom-popup">
+                              <div className="popup-content">
+                                <strong>{incident.name}</strong><br />
+                                <span style={{fontSize: '11px'}}>{incident.date}</span><br />
+                                <span style={{fontSize: '12px', fontWeight: 'bold', color: color}}>{incident.deaths} deaths</span>
+                              </div>
+                            </Popup>
+                          </Marker>
+                        );
+                      })}
+                    </MapContainer>
+                  );
+                })()}
               </div>
               <div className="map-legend">
                 <div className="legend-item">
