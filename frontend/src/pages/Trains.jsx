@@ -32,13 +32,20 @@ export default function Trains() {
 
   const load = async () => {
     try {
-      const res = await fetch('/api/trains/current')
+      const res = await fetch('/api/trains/current?limit=200')
       if (res.ok) {
         const data = await res.json()
+        console.log('Trains loaded:', Array.isArray(data) ? data.length : 0)
         setTrains(Array.isArray(data) ? data : [])
         setLive(true)
+      } else {
+        console.error('Trains API error:', res.status, res.statusText)
+        setLive(false)
       }
-    } catch { setLive(false) }
+    } catch (err) {
+      console.error('Trains fetch error:', err)
+      setLive(false)
+    }
     setLoading(false)
   }
   useEffect(() => { load(); const iv = setInterval(load, 10000); return () => clearInterval(iv) }, [])

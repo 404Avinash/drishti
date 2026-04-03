@@ -236,6 +236,9 @@ if metrics_router:
 from backend.api.data_endpoints import router as data_router
 app.include_router(data_router)
 
+from backend.api.trains_router import router as trains_router
+app.include_router(trains_router)
+
 stats = {
     "total": 0, "critical": 0, "high": 0, "medium": 0, "low": 0,
     "trains_monitored": 9182,
@@ -939,7 +942,11 @@ if _assets.exists():
 
 @app.get("/{full_path:path}")
 async def serve_react_app(full_path: str):
-    """Fallback: serve React's index.html for client-side routing."""
+    """Fallback: serve React's index.html for client-side routing (but NOT for API routes)."""
+    # Don't intercept API routes
+    if full_path.startswith("api/") or full_path.startswith(".well-known/"):
+        raise HTTPException(status_code=404, detail="Not found")
+    
     file_path = FRONTEND_DIR / full_path
     if file_path.is_file():
         return FileResponse(str(file_path))
