@@ -529,11 +529,11 @@ export default function Simulation() {
                         key={incident.id}
                         position={incident.coordinates}
                         icon={L.divIcon({
-                          html: `<div class="custom-marker" style="background: ${color}; box-shadow: 0 0 20px ${color}80;"><span>⚠️</span></div>`,
+                          html: `<div class="custom-marker" style="background: ${color}; box-shadow: 0 0 20px ${color}80;"><span>📍</span></div>`,
                           className: 'custom-marker-container',
-                          iconSize: [40, 40],
-                          iconAnchor: [20, 40],
-                          popupAnchor: [0, -35],
+                          iconSize: [50, 50],
+                          iconAnchor: [25, 50],
+                          popupAnchor: [0, -50],
                         })}
                         onClick={() => setSelectedIncident(incident)}
                       >
@@ -571,28 +571,30 @@ export default function Simulation() {
 
             {/* Incidents List */}
             <div className="incidents-list">
-              <h3>📋 Historical Incidents in Region</h3>
-              {historicalIncidents.map(incident => (
-                <div
-                  key={incident.id}
-                  className={`incident-card ${selectedIncident?.id === incident.id ? 'selected' : ''}`}
-                  onClick={() => setSelectedIncident(incident)}
-                >
-                  <div className="incident-header">
-                    <h4>{incident.name}</h4>
-                    <span className="incident-date">{incident.date}</span>
+              <h3>📋 Historical Incidents</h3>
+              <div className="incidents-scroll">
+                {historicalIncidents.map(incident => (
+                  <div
+                    key={incident.id}
+                    className={`incident-card ${selectedIncident?.id === incident.id ? 'selected' : ''}`}
+                    onClick={() => setSelectedIncident(incident)}
+                  >
+                    <div className="incident-header">
+                      <h4>{incident.name}</h4>
+                      <span className="incident-date">{incident.date}</span>
+                    </div>
+                    <p className="incident-location">📍 {incident.location}</p>
+                    <div className="incident-stats">
+                      <span className="stat">
+                        <strong>Deaths:</strong> {incident.deaths}
+                      </span>
+                      <span className="stat">
+                        <strong>Injured:</strong> {incident.injured}
+                      </span>
+                    </div>
                   </div>
-                  <p className="incident-location">📍 {incident.location}</p>
-                  <div className="incident-stats">
-                    <span className="stat">
-                      <strong>Deaths:</strong> {incident.deaths}
-                    </span>
-                    <span className="stat">
-                      <strong>Injured:</strong> {incident.injured}
-                    </span>
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           </div>
 
