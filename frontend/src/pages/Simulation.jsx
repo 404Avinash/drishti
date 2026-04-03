@@ -501,7 +501,7 @@ export default function Simulation() {
                 <MapContainer
                   center={balasoreZone.center}
                   zoom={balasoreZone.zoom}
-                  style={{ height: '500px', width: '100%' }}
+                  style={{ height: '100%', width: '100%' }}
                   className="map-container-leaflet"
                 >
                   <TileLayer
