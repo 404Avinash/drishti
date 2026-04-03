@@ -257,3 +257,8 @@ jobs:
             echo "✅ DRISHTI deployed successfully!"
             echo "Disk usage after deploy:"
             df -h /
+
+            echo "=== BACKEND LOGS ==="
+            sleep 10
+            docker logs drishti-api --tail 200
+
