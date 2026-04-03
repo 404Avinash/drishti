@@ -493,50 +493,79 @@ export default function Simulation() {
           <div className="historical-grid">
             {/* Map Section */}
             <div className="map-section">
-              <h3>📍 Railway Zones & Incident Locations</h3>
-              <div className="leaflet-container">
+              <div className="map-header">
+                <h3>📍 Railway Zones & Incident Locations</h3>
+                <p className="map-subtitle">Click incidents to explore detailed analysis</p>
+              </div>
+              <div className="leaflet-wrapper">
                 <MapContainer
                   center={balasoreZone.center}
                   zoom={balasoreZone.zoom}
-                  style={{ height: '400px', width: '100%' }}
+                  style={{ height: '500px', width: '100%' }}
+                  className="map-container-leaflet"
                 >
                   <TileLayer
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                     attribution='&copy; OpenStreetMap contributors'
                   />
                   
-                  {/* Balasore Focus Circle */}
+                  {/* Balasore Focus Circle - Animated */}
                   <Circle
                     center={balasoreZone.center}
-                    radius={50000}
+                    radius={80000}
                     fillColor="#FF6B6B"
-                    weight={2}
-                    opacity={0.8}
-                    fillOpacity={0.2}
+                    weight={3}
+                    opacity={1}
+                    fillOpacity={0.15}
                     color="#FF6B6B"
                   />
 
-                  {/* Historical Incidents Markers */}
-                  {historicalIncidents.map(incident => (
-                    <Marker
-                      key={incident.id}
-                      position={incident.coordinates}
-                      icon={L.icon({
-                        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-                        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-                        iconSize: [25, 41],
-                        iconAnchor: [12, 41],
-                        popupAnchor: [1, -34],
-                      })}
-                      onClick={() => setSelectedIncident(incident)}
-                    >
-                      <Popup>
-                        <strong>{incident.name}</strong><br />
-                        {incident.date}
-                      </Popup>
-                    </Marker>
-                  ))}
+                  {/* Historical Incidents Markers - Custom Icons */}
+                  {historicalIncidents.map((incident, idx) => {
+                    const colors = ['#FF6B6B', '#FF9800', '#9C27B0', '#00BCD4'];
+                    const color = colors[idx % colors.length];
+                    return (
+                      <Marker
+                        key={incident.id}
+                        position={incident.coordinates}
+                        icon={L.divIcon({
+                          html: `<div class="custom-marker" style="background: ${color}; box-shadow: 0 0 20px ${color}80;"><span>⚠️</span></div>`,
+                          className: 'custom-marker-container',
+                          iconSize: [40, 40],
+                          iconAnchor: [20, 40],
+                          popupAnchor: [0, -35],
+                        })}
+                        onClick={() => setSelectedIncident(incident)}
+                      >
+                        <Popup className="custom-popup">
+                          <div className="popup-content">
+                            <strong>{incident.name}</strong><br />
+                            <span style={{fontSize: '11px'}}>{incident.date}</span><br />
+                            <span style={{fontSize: '12px', fontWeight: 'bold', color: color}}>{incident.deaths} deaths</span>
+                          </div>
+                        </Popup>
+                      </Marker>
+                    );
+                  })}
                 </MapContainer>
+              </div>
+              <div className="map-legend">
+                <div className="legend-item">
+                  <span className="legend-dot" style={{background: '#FF6B6B'}}></span>
+                  <span>Balasore (2023)</span>
+                </div>
+                <div className="legend-item">
+                  <span className="legend-dot" style={{background: '#FF9800'}}></span>
+                  <span>Hindamata (2017)</span>
+                </div>
+                <div className="legend-item">
+                  <span className="legend-dot" style={{background: '#9C27B0'}}></span>
+                  <span>Elphinstone (2017)</span>
+                </div>
+                <div className="legend-item">
+                  <span className="legend-dot" style={{background: '#00BCD4'}}></span>
+                  <span>Pukhrayan (2016)</span>
+                </div>
               </div>
             </div>
 
