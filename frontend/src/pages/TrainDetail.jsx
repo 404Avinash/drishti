@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts'
 import AlertBadge from '../components/AlertBadge'
 import LiveIndicator from '../components/LiveIndicator'
+import { getTrainCurrent, getTrainHistory } from '../api'
 
 function Metric({ label, value, unit, color = 'var(--cyan)', large = false }) {
   return (
@@ -25,25 +26,19 @@ export default function TrainDetail() {
 
   const load = async () => {
     try {
-      const [tRes, hRes] = await Promise.allSettled([
-        fetch(`/api/trains/${id}/current`),
-        fetch(`/api/trains/${id}/history?hours=12`),
+      const [train, hist] = await Promise.all([
+        getTrainCurrent(id),
+        getTrainHistory(id, 12),
       ])
-      if (tRes.status === 'fulfilled' && tRes.value.ok) {
-        setTrain(await tRes.value.json())
-        setLive(true)
-      }
-      if (hRes.status === 'fulfilled' && hRes.value.ok) {
-        const data = await hRes.value.json()
-        if (Array.isArray(data)) {
-          const chartData = data.slice(-60).map(d => ({
-            time:   new Date(d.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-            speed:  d.speed || 0,
-            stress: d.stress_score ? +(d.stress_score * 100).toFixed(1) : 0,
-            delay:  d.delay_minutes || 0,
-          }))
-          setHistory(chartData)
-        }
+      if (train) { setTrain(train); setLive(true) }
+      if (hist.length) {
+        const chartData = hist.slice(-60).map(d => ({
+          time:   new Date(d.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+          speed:  d.speed  || 0,
+          stress: d.stress_score ? +(d.stress_score * 100).toFixed(1) : 0,
+          delay:  d.delay_minutes || 0,
+        }))
+        setHistory(chartData)
       }
     } catch { setLive(false) }
     setLoading(false)

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import LiveIndicator from '../components/LiveIndicator'
+import { getHealth, getIngestionSummary, getStats } from '../api'
 
 function HealthCard({ name, status, detail, metric, metricLabel, icon, color }) {
   const ok = status === 'ok' || status === 'healthy' || status === 'online'
@@ -30,16 +31,13 @@ function HealthCard({ name, status, detail, metric, metricLabel, icon, color }) 
   )
 }
 
-function UptimeClock({ startIso }) {
-  const [elapsed, setElapsed] = useState(0)
+function UptimeClock({ seconds }) {
+  const [elapsed, setElapsed] = useState(seconds || 0)
   useEffect(() => {
-    if (!startIso) return
-    const start = new Date(startIso).getTime()
-    const tick  = () => setElapsed(Math.max(0, Math.floor((Date.now() - start) / 1000)))
-    tick()
-    const iv = setInterval(tick, 1000)
+    setElapsed(seconds || 0)
+    const iv = setInterval(() => setElapsed(s => s + 1), 1000)
     return () => clearInterval(iv)
-  }, [startIso])
+  }, [seconds])
 
   const d = Math.floor(elapsed / 86400)
   const h = Math.floor((elapsed % 86400) / 3600)
@@ -57,21 +55,20 @@ function UptimeClock({ startIso }) {
 export default function System() {
   const [health,    setHealth]    = useState(null)
   const [ingestion, setIngestion] = useState(null)
+  const [stats,     setStats]     = useState(null)
   const [live,      setLive]      = useState(false)
 
   const load = async () => {
     try {
-      const [hRes, iRes] = await Promise.allSettled([
-        fetch('/api/health'),
-        fetch('/api/trains/ingestion/summary'),
+      const [h, ing, s] = await Promise.all([
+        getHealth(),
+        getIngestionSummary(),
+        getStats(),
       ])
-      if (hRes.status === 'fulfilled' && hRes.value.ok) {
-        setHealth(await hRes.value.json())
-        setLive(true)
-      }
-      if (iRes.status === 'fulfilled' && iRes.value.ok) {
-        setIngestion(await iRes.value.json())
-      }
+      setHealth(h)
+      setIngestion(ing)
+      setStats(s)
+      setLive(h.status === 'ok')
     } catch { setLive(false) }
   }
   useEffect(() => { load(); const iv = setInterval(load, 10000); return () => clearInterval(iv) }, [])
@@ -86,12 +83,12 @@ export default function System() {
         <p style={{ color: 'var(--t2)', fontSize: 13 }}>Infrastructure status · API health · Database connections · Pipeline metrics</p>
       </div>
 
-      {/* Uptime */}
-      {health?.started_at && (
+      {/* Uptime — uses /api/stats uptime_seconds */}
+      {(stats?.uptime_seconds != null || live) && (
         <div style={{ padding: '20px 24px', background: 'var(--glass)', backdropFilter: 'var(--blur)', WebkitBackdropFilter: 'var(--blur)', border: '1px solid var(--green-30)', borderRadius: 'var(--r-md)', marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
           <div>
             <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.14em', color: 'var(--t3)', textTransform: 'uppercase', marginBottom: 6 }}>System Uptime</div>
-            <UptimeClock startIso={health.started_at} />
+            <UptimeClock seconds={stats?.uptime_seconds ?? 0} />
           </div>
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: 9.5, color: 'var(--t3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>Deployed On</div>

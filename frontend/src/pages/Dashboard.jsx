@@ -4,6 +4,7 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import StatCard from '../components/StatCard'
 import AlertBadge from '../components/AlertBadge'
 import LiveIndicator from '../components/LiveIndicator'
+import { getCurrentTrains, getAlerts, getIngestionSummary, getHealth } from '../api'
 
 const ZONES = ['NR','CR','WR','ER','SR','SER','NFR','NWR','SCR']
 
@@ -79,33 +80,23 @@ export default function Dashboard() {
 
   const load = async () => {
     try {
-      const [tRes, aRes, iRes, hRes] = await Promise.allSettled([
-        fetch('/api/trains/current'),
-        fetch('/api/alerts/history?limit=30'),
-        fetch('/api/trains/ingestion/summary'),
-        fetch('/api/health'),
+      const [trains, alerts, ingestion, health] = await Promise.all([
+        getCurrentTrains(),
+        getAlerts(30),
+        getIngestionSummary(),
+        getHealth(),
       ])
-      if (tRes.status === 'fulfilled' && tRes.value.ok) {
-        const data = await tRes.value.json()
-        setTrains(Array.isArray(data) ? data : [])
-      }
-      if (aRes.status === 'fulfilled' && aRes.value.ok) {
-        const data = await aRes.value.json()
-        setAlerts(Array.isArray(data) ? data.slice(0, 20) : [])
-      }
-      if (iRes.status === 'fulfilled' && iRes.value.ok) {
-        const data = await iRes.value.json()
-        setIngestion(data)
-        // Build sparkline from ingestion
-        setSparkData(prev => {
-          const next = [...prev, { time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }), value: data.persisted || 0 }]
-          return next.slice(-20)
-        })
-      }
-      if (hRes.status === 'fulfilled' && hRes.value.ok) {
-        const data = await hRes.value.json()
-        setLive(data.status === 'ok' || data.status === 'healthy')
-      }
+      setTrains(trains)
+      setAlerts(alerts.slice(0, 20))
+      setIngestion(ingestion)
+      setSparkData(prev => {
+        const next = [...prev, {
+          time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+          value: ingestion.persisted || 0,
+        }]
+        return next.slice(-20)
+      })
+      setLive(health.status === 'ok')
     } catch { /* silent */ }
   }
 

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
 import AlertBadge from '../components/AlertBadge'
 import LiveIndicator from '../components/LiveIndicator'
+import { getAlerts } from '../api'
 
 const SEVERITIES = ['ALL', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
 const ZONES     = ['ALL', 'NR', 'CR', 'WR', 'ER', 'SR', 'SER', 'NFR', 'NWR', 'SCR']
@@ -105,8 +105,9 @@ export default function Alerts() {
 
   const load = async () => {
     try {
-      const res = await fetch('/api/alerts/history?limit=200')
-      if (res.ok) { setAlerts(await res.json()); setLive(true) }
+      const data = await getAlerts(200)
+      setAlerts(data)
+      setLive(true)
     } catch { setLive(false) }
     setLoading(false)
   }
