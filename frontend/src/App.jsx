@@ -8,6 +8,7 @@ import TrainDetail from './pages/TrainDetail'
 import Alerts from './pages/Alerts'
 import Models from './pages/Models'
 import System from './pages/System'
+import Simulation from './pages/Simulation'
 import './index.css'
 import './App.css'
 
@@ -38,6 +39,7 @@ export default function App() {
           <Route path="/alerts"     element={<Alerts />} />
           <Route path="/ai"         element={<Models />} />
           <Route path="/system"     element={<System />} />
+          <Route path="/simulation" element={<Simulation />} />
         </Route>
       </Routes>
     </BrowserRouter>

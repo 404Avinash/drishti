@@ -10,7 +10,7 @@ import json
 from datetime import datetime, timezone
 
 # ── IMPORT ALL INTELLIGENCE MODULES ─────────────────────────────────────────
-from backend.api import cascade_viz, alert_reasoning, trains_router, data_endpoints
+from backend.api import cascade_viz, alert_reasoning, trains_router, data_endpoints, simulation
 # Note: ML modules imported dynamically when needed
 
 logging.basicConfig(level=logging.INFO)
@@ -66,6 +66,7 @@ app.include_router(cascade_viz.router)
 app.include_router(alert_reasoning.router)
 app.include_router(trains_router.router)
 app.include_router(data_endpoints.router)
+app.include_router(simulation.router)
 
 # ── HEALTH CHECK ───────────────────────────────────────────────────────────
 

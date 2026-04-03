@@ -3,12 +3,13 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { getAlerts } from '../api'
 
 const NAV_LINKS = [
-  { to: '/dashboard', label: 'Dashboard',  icon: '⬡' },
-  { to: '/network',   label: 'Network',    icon: '◎' },
-  { to: '/trains',    label: 'Trains',     icon: '⟁' },
-  { to: '/alerts',    label: 'Alerts',     icon: '⚠' },
-  { to: '/ai',        label: 'AI Brain',   icon: '⬙' },
-  { to: '/system',    label: 'System',     icon: '⊞' },
+  { to: '/dashboard',  label: 'Dashboard',   icon: '⬡' },
+  { to: '/network',    label: 'Network',     icon: '◎' },
+  { to: '/trains',     label: 'Trains',      icon: '⟁' },
+  { to: '/simulation', label: 'Simulation',  icon: '⚡' },
+  { to: '/alerts',     label: 'Alerts',      icon: '⚠' },
+  { to: '/ai',         label: 'AI Brain',    icon: '⬙' },
+  { to: '/system',     label: 'System',      icon: '⊞' },
 ]
 
 export default function Navbar() {
