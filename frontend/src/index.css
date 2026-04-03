@@ -168,6 +168,28 @@ input, select { font: inherit; }
   75%, 100% { transform: scale(2.2); opacity: 0; }
 }
 
+/* ─── Leaflet Overrides ──────────────────────────────── */
+.leaflet-popup-content-wrapper {
+  background: rgba(7,13,26,.95) !important;
+  color: var(--t1) !important;
+  border: 1px solid rgba(0,212,255,.3) !important;
+  border-radius: 8px !important;
+}
+.leaflet-popup-tip { background: rgba(7,13,26,.95) !important; }
+.leaflet-control { background: rgba(7,13,26,.75) !important; }
+.leaflet-control-zoom { border: 1px solid rgba(0,212,255,.2) !important; }
+.leaflet-control-zoom-in, .leaflet-control-zoom-out {
+  background: rgba(0,212,255,.1) !important;
+  color: var(--cyan) !important;
+  border-bottom: 1px solid rgba(0,212,255,.2) !important;
+  font-weight: bold;
+}
+.leaflet-control-zoom-in:hover, .leaflet-control-zoom-out:hover {
+  background: rgba(0,212,255,.2) !important;
+}
+.junction-marker { filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.5)); }
+
+
 /* ─── Status colors ──────────────────────────────────── */
 .status-critical { color: var(--red);    background: var(--red-10);    border-color: var(--red-30); }
 .status-high     { color: var(--orange); background: var(--orange-10); border-color: var(--orange-30); }

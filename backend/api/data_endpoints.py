@@ -51,10 +51,12 @@ async def get_current_trains(
                     "longitude": latest_telemetry.longitude,
                     "timestamp": latest_telemetry.timestamp_utc.isoformat(),
                     "source": latest_telemetry.source,
+                    "stress_level": "CRITICAL" if latest_telemetry.delay_minutes > 120 else ("HIGH" if latest_telemetry.delay_minutes > 60 else "STABLE"),
                 }
             )
 
-    return {"trains": result, "count": len(result)}
+    # Return as direct array (compatible with frontend)
+    return result
 
 
 @router.get("/trains/{train_id}/history")

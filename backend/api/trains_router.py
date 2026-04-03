@@ -21,7 +21,7 @@ async def get_current_train_states(
     limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
-    """Get latest train state for all active trains, optionally filtered by zone."""
+    """Get latest train state for all active trains with telemetry."""
     query = db.query(Train).filter(Train.is_active.is_(True))
 
     if zone:
@@ -33,17 +33,46 @@ async def get_current_train_states(
     query = query.order_by(desc(Train.updated_at)).limit(limit)
     trains = query.all()
 
-    return [
-        {
+    result = []
+    for t in trains:
+        # Get latest telemetry
+        latest_tel = (
+            db.query(TrainTelemetry)
+            .filter(TrainTelemetry.train_id == t.train_id)
+            .order_by(desc(TrainTelemetry.timestamp_utc))
+            .first()
+        )
+        
+        # Get zone from station
+        station = db.query(Station).filter(Station.code == t.current_station_code).first()
+        zone = station.zone if station else "UNKNOWN"
+        
+        # Determine stress level based on delay
+        stress = "STABLE"
+        if latest_tel:
+            if latest_tel.delay_minutes > 60:
+                stress = "CRITICAL"
+            elif latest_tel.delay_minutes > 30:
+                stress = "HIGH"
+            elif latest_tel.delay_minutes > 15:
+                stress = "MEDIUM"
+        
+        result.append({
             "train_id": t.train_id,
             "train_name": t.train_name,
             "current_station": t.current_station_code,
+            "zone": zone,
             "route": t.route,
             "source": t.source,
-            "updated_at": t.updated_at.isoformat(),
-        }
-        for t in trains
-    ]
+            "stress_level": stress,
+            "delay_minutes": latest_tel.delay_minutes if latest_tel else 0,
+            "speed_kmh": latest_tel.speed_kmh if latest_tel else 0.0,
+            "latitude": latest_tel.latitude if latest_tel else 0.0,
+            "longitude": latest_tel.longitude if latest_tel else 0.0,
+            "timestamp": latest_tel.timestamp_utc.isoformat() if latest_tel else None,
+        })
+
+    return result
 
 
 @router.get("/{train_id}/current", response_model=dict)
