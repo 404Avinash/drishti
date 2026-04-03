@@ -130,14 +130,19 @@ def _metric_set(metric, value: float) -> None:
 # ── Lifespan (replaces deprecated @app.on_event) ─────────────────────────────
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    global cascade_engine
+    global cascade_engine, startup_error
+    startup_error = None
     
     # Apply database migrations
-    applied = run_migrations()
-    if applied:
-        logger.info("[DB] Applied migrations: %s", ", ".join(applied))
-    else:
-        logger.info("[DB] No pending migrations")
+    try:
+        applied = run_migrations()
+        if applied:
+            logger.info("[DB] Applied migrations: %s", ", ".join(applied))
+        else:
+            logger.info("[DB] No pending migrations")
+    except Exception as e:
+        logger.error(f"[DB] Migration failed: {e}")
+        startup_error = str(e)
 
     if _cascade_available and CascadeEngine:
         cascade_engine = CascadeEngine()
@@ -520,7 +525,8 @@ async def redis_telemetry_loop():
 @app.get("/api/health")
 async def health():
     return {
-        "status": "healthy",
+        "status": "healthy" if not startup_error else "unhealthy",
+        "startup_error": startup_error,
         "service": "DRISHTI Network Intelligence v7.0",
         "timestamp": datetime.now().isoformat(),
         "connections": len(active_connections),
