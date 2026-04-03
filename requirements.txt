@@ -1,41 +1,48 @@
-# Core data + ML (lightweight for deployment)
+# ─────────────────────────────────────────────────────────────────────────────
+# DRISHTI — Production Dependencies
+#
+# IMPORTANT: tensorflow, prophet, mlflow are EXCLUDED from production.
+# They are massive (1GB+) and only needed for offline training.
+# The trained models are saved to disk (models/) and loaded at runtime.
+# For ML training runs, install requirements-dev.txt separately.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Core data (lightweight) ───────────────────────────────────────────────────
 pandas>=2.1.0
 numpy>=1.26.0
 scikit-learn>=1.3.0
 scipy>=1.11.0
 networkx>=3.1
 
-# Probabilistic inference
+# ── Probabilistic inference ───────────────────────────────────────────────────
 pgmpy>=0.1.20
 
-# Phase 3 ML Ops + Explainability + Forecasting
-mlflow>=2.14.0
+# ── SHAP (explainability — lightweight subset, no tensorflow dep) ─────────────
 shap>=0.46.0
-prophet>=1.1.5
-tensorflow>=2.16.0
 
-# Streaming & data
+# ── Streaming & data ──────────────────────────────────────────────────────────
 redis>=5.0.0
 requests>=2.31.0
 
-# APIs & async
+# ── APIs & async ──────────────────────────────────────────────────────────────
 fastapi>=0.100.0
 uvicorn[standard]>=0.23.2
 prometheus-client>=0.17.1
 pydantic>=2.0.3
 websockets>=11.0.3
 
-# Databases
+# ── Databases ─────────────────────────────────────────────────────────────────
 sqlalchemy>=2.0.19
+psycopg2-binary>=2.9.7
 pytz>=2023.3
 
-# Utilities
+# ── Utilities ─────────────────────────────────────────────────────────────────
 python-dateutil>=2.8.2
 python-dotenv>=1.0.0
 
-# Security
+# ── Security ──────────────────────────────────────────────────────────────────
 cryptography>=41.0.1
 PyJWT>=2.8.0
 
-# Testing / dev
+# ── Testing / dev ─────────────────────────────────────────────────────────────
 httpx>=0.24.0

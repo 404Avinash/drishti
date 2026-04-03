@@ -231,11 +231,29 @@ jobs:
             GITHUB_REPOSITORY=${REPO}
             ENVEOF
 
+            # ── CRITICAL: Free disk space BEFORE pulling new images ───────────
+            # Stop running containers gracefully first
+            docker compose -f docker-compose.production.yml down --timeout 10 || true
+
+            # Remove ALL unused images (not just dangling) — frees the old layers
+            docker image prune -af || true
+
+            # Remove stopped containers
+            docker container prune -f || true
+
+            # Remove unused volumes (careful: keeps named volumes with data)
+            docker volume prune -f || true
+
+            # Remove build cache
+            docker builder prune -af || true
+
+            echo "Disk usage after cleanup:"
+            df -h /
+
             # ── Pull & restart containers ─────────────────────────────────────
             docker compose -f docker-compose.production.yml pull
             docker compose -f docker-compose.production.yml up -d --remove-orphans
 
-            # ── Cleanup old images ────────────────────────────────────────────
-            docker image prune -f
-
             echo "✅ DRISHTI deployed successfully!"
+            echo "Disk usage after deploy:"
+            df -h /
