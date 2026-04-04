@@ -129,22 +129,36 @@ export async function getTrainsAtStation(stationCode) {
 }
 
 /**
- * Ingestion summary. Backend returns { total_records: { received, valid, persisted }, by_source }.
- * We flatten to { received, valid, persisted, by_source, error_rate }.
+ * Ingestion summary — hits the real /api/trains/ingestion/summary endpoint.
+ * Falls back to estimating from train count if DB has no ingestion run records.
  */
 export async function getIngestionSummary() {
   try {
-    const trains = await getCurrentTrains()
+    const d = await _get('/trains/ingestion/summary')
+    const tot = d.total_records ?? {}
     return {
-      received:   trains.length * 12,
-      valid:      trains.length * 11,
-      persisted:  trains.length,
-      by_source:  { ntes_real_feeds: trains.length, osint_feeds: 50 },
-      error_rate: 0.05,
-      last_run:   new Date().toISOString(),
+      received:   tot.received  ?? 0,
+      valid:      tot.valid     ?? 0,
+      persisted:  tot.persisted ?? 0,
+      by_source:  d.by_source   ?? {},
+      error_rate: tot.received > 0 ? +(1 - tot.valid / tot.received).toFixed(3) : 0,
+      last_run:   d.latest_run?.finished_at ?? null,
     }
   } catch {
-    return { received: 0, valid: 0, persisted: 0, by_source: {}, error_rate: 0, last_run: null }
+    // Fallback: estimate from live train count
+    try {
+      const trains = await getCurrentTrains()
+      return {
+        received:  trains.length * 12,
+        valid:     trains.length * 11,
+        persisted: trains.length,
+        by_source: { simulation: trains.length },
+        error_rate: 0.05,
+        last_run: new Date().toISOString(),
+      }
+    } catch {
+      return { received: 0, valid: 0, persisted: 0, by_source: {}, error_rate: 0, last_run: null }
+    }
   }
 }
 
@@ -156,20 +170,31 @@ export async function getIngestionSummary() {
  */
 export async function getAlerts(limit = 200) {
   try {
-    const d = await _get(`/alerts/unified`)
+    // Backend exposes /api/alerts/history → { total, alerts: [...] }
+    const d = await _get(`/alerts/history?limit=${Math.min(limit, 200)}`)
     const arr = Array.isArray(d) ? d : (d.alerts ?? [])
     return arr.slice(0, limit).map(a => ({
       id:           a.alert_id ?? a.id,
-      severity:     a.severity   ?? 'CRITICAL',
-      alert_type:   a.title ?? a.alert_type ?? 'System Alert',
+      severity:     a.severity ?? 'LOW',
+      alert_type:   a.train_name
+                      ? `${a.train_name} @ ${a.station_name ?? a.station_code ?? '—'}`
+                      : (a.title ?? a.alert_type ?? 'System Alert'),
       timestamp:    a.timestamp,
-      description:  a.description ?? 'Critical event',
+      description:  a.explanation ?? a.description ?? 'Risk event flagged by DRISHTI AI',
       zone:         a.zone ?? 'ALL',
-      train_id:     a.affected_trains?.[0],
-      station:      a.affected_junctions?.[0],
-      confidence:   a.reasons?.[0]?.confidence ?? 0.95,
-      models:       a.reasons?.map(r => r.ml_model) ?? [],
-      actions:      a.reasons?.[0]?.recommended_action,
+      train_id:     a.train_id,
+      station:      a.station_name ?? a.station_code,
+      node_id:      a.station_code,
+      // Numeric scores from backend
+      confidence:   a.risk_score   ?? 0.5,
+      stress_score: a.risk_score   ?? null,
+      crs_match_score: a.signature_match_pct != null ? a.signature_match_pct / 100 : null,
+      bayesian_risk: a.bayesian_risk ?? null,
+      anomaly_score: a.anomaly_score ?? null,
+      models:       a.methods_voting ? Object.keys(a.methods_voting).filter(k => a.methods_voting[k]) : [],
+      actions:      Array.isArray(a.actions) ? a.actions.join(', ') : a.actions,
+      lat:          a.lat,
+      lng:          a.lng,
     }))
   } catch { return [] }
 }
@@ -209,21 +234,27 @@ export async function getZoneCoverage() {
 
 export async function getLiveStats() {
   try {
-    // Prefer /api/stats which gives us critical/high/medium/low counts
+    // /api/stats tracks the alert_buffer counts — this is the authoritative source
+    // for CRITICAL/HIGH/MEDIUM/LOW since alerts come from the streaming engine
     const [statsData, trainsData] = await Promise.allSettled([
       getStats(),
       getCurrentTrains(),
     ])
     const s = statsData.status === 'fulfilled' ? statsData.value : {}
     const trains = trainsData.status === 'fulfilled' ? trainsData.value : []
+    // Use stats.trains_monitored only if a reasonable number (not the fake 9182)
+    const trainCount = trains.length || (s.trains_monitored < 9000 ? s.trains_monitored : 0)
     return {
-      total:    s.total    ?? trains.length,
-      critical: s.critical ?? trains.filter(t => t.stress_level === 'CRITICAL').length,
-      high:     s.high     ?? trains.filter(t => t.stress_level === 'HIGH').length,
-      trains:   s.trains_monitored ?? trains.length,
+      total:    s.total    ?? 0,
+      critical: s.critical ?? 0,
+      high:     s.high     ?? 0,
+      trains:   trainCount,
       nodes:    s.nodes_watched ?? 51,
+      // Pass raw alert counts for dashboard consistency
+      alert_total:    s.total    ?? 0,
+      alert_critical: s.critical ?? 0,
     }
-  } catch { return { total: 0, critical: 0, high: 0, trains: 0, nodes: 51 } }
+  } catch { return { total: 0, critical: 0, high: 0, trains: 0, nodes: 51, alert_total: 0, alert_critical: 0 } }
 }
 
 // ── Polling helpers ────────────────────────────────────────────────────────────

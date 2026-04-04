@@ -196,3 +196,16 @@ input, select { font: inherit; }
 .status-medium   { color: var(--yellow); background: var(--yellow-10); border-color: var(--yellow-30); }
 .status-low      { color: var(--green);  background: var(--green-10);  border-color: var(--green-30); }
 .status-stable   { color: var(--cyan);   background: var(--cyan-10);   border-color: var(--cyan-30); }
+
+/* ─── Zone label permanent tooltip ───────────────────────── */
+.zone-label-tooltip {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  pointer-events: none;
+}
+.zone-label-tooltip::before { display: none !important; }
+.leaflet-tooltip-top.zone-label-tooltip::before,
+.leaflet-tooltip-bottom.zone-label-tooltip::before,
+.leaflet-tooltip-center.zone-label-tooltip::before { display: none !important; }
