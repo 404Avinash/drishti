@@ -46,6 +46,10 @@ COPY --from=builder /install /usr/local
 # Copy application code
 COPY backend/        ./backend/
 COPY scripts/        ./scripts/
+COPY data/           ./data/
+COPY models/         ./models/
+# Cascade logic needs the graph definition
+COPY frontend/public/network_graph.json ./frontend/public/network_graph.json
 COPY crs_corpus.json ./
 COPY requirements.txt ./
 

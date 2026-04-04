@@ -29,8 +29,8 @@ services:
       - LOG_LEVEL=INFO
       - ENVIRONMENT=production
     volumes:
-      - ./data:/app/data
-      - ./models:/app/models
+      - drishti_data:/app/data
+      - drishti_models:/app/models
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 30s
@@ -49,6 +49,8 @@ services:
 
 volumes:
   redis_data:
+  drishti_data:
+  drishti_models:
 
 networks:
   default:
