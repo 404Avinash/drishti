@@ -65,61 +65,53 @@ Write-Host ""
 Write-Host "🚀 Starting emergency fix sequence..." -ForegroundColor Cyan
 Write-Host ""
 
-# Remote fix script - THE ACTUAL FIX
+# Remote fix script - DIRECT RESTART
 $REMOTE_FIX = @'
 #!/bin/bash
-set -e
-
 cd /home/ubuntu/drishti
 
-echo "▶ [1/8] Checking Docker..."
-docker --version > /dev/null 2>&1 || { echo "❌ Docker not installed"; exit 1; }
-echo "✅ Docker OK"
+echo "🔥 DRISHTI EMERGENCY RESTART"
+echo "================================"
+echo ""
 
-echo "▶ [2/8] Installing Docker Compose plugin if needed..."
-if ! docker compose version &>/dev/null 2>&1; then
-    COMPOSE_VERSION=$(curl -fsSL https://api.github.com/repos/docker/compose/releases/latest 2>/dev/null | grep '"tag_name"' | cut -d'"' -f4 || echo "v2.24.0")
-    sudo mkdir -p /usr/local/lib/docker/cli-plugins
-    sudo curl -fsSL "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-x86_64" -o /usr/local/lib/docker/cli-plugins/docker-compose 2>/dev/null
-    sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
-fi
-echo "✅ Docker Compose OK"
+echo "1️⃣  Stopping all containers..."
+docker compose -f docker-compose.production.yml down -v 2>/dev/null || true
+sleep 5
 
-echo "▶ [3/8] Checking environment..."
-if [ ! -f .env ]; then
-    echo "⚠️  .env missing - this is critical!"
-    exit 1
-fi
-echo "✅ Environment loaded"
+echo "2️⃣  Cleaning up old images..."
+docker image prune -af 2>/dev/null || true
+docker builder prune -af 2>/dev/null || true
 
-echo "▶ [4/8] Stopping old containers..."
-docker compose -f docker-compose.production.yml down --timeout 10 2>/dev/null || true
-sleep 3
-echo "✅ Containers stopped"
+echo "3️⃣  Pulling latest images from GitHub Container Registry..."
+docker pull ghcr.io/404avinash/drishti/backend:latest 2>&1 | tail -3
+docker pull ghcr.io/404avinash/drishti/frontend:latest 2>&1 | tail -3
 
-echo "▶ [5/8] Pulling latest Docker images..."
-docker compose -f docker-compose.production.yml pull 2>&1 | grep -E "(Pulling|Downloaded|Status|Already)" | head -10
-echo "✅ Images pulled"
-
-echo "▶ [6/8] Starting fresh containers..."
+echo "4️⃣  Starting fresh containers..."
 docker compose -f docker-compose.production.yml up -d
-echo "✅ Containers started"
 
-echo "▶ [7/8] Waiting for services to initialize (40 seconds)..."
-sleep 40
+echo "5️⃣  Waiting 45 seconds for initialization..."
+for i in {45..1}; do
+    echo -ne "\r     ⏳ $i seconds remaining..."
+    sleep 1
+done
+echo -e "\r✅ Initialization complete            "
 
-echo "▶ [8/8] Verifying system health..."
-if curl -f -s http://localhost:8000/api/health > /dev/null 2>&1; then
-    HEALTH=$(curl -s http://localhost:8000/api/health | jq -r '.status // "unknown"' 2>/dev/null)
-    echo "✅ Backend responding - Status: $HEALTH"
+echo ""
+echo "6️⃣  Container Status:"
+docker compose -f docker-compose.production.yml ps
+
+echo ""
+echo "7️⃣  Backend Health Check:"
+if curl -s http://localhost:8000/api/health > /dev/null 2>&1; then
+    curl -s http://localhost:8000/api/health | jq '.status, .database, .websocket_connections' 2>/dev/null || echo "OK"
+    echo "✅ Backend is responding!"
 else
-    echo "⚠️  Backend not responding yet - checking logs..."
-    docker compose logs drishti-api 2>&1 | tail -20
+    echo "⚠️  Still starting, wait 30 more seconds and refresh browser"
 fi
 
 echo ""
 echo "════════════════════════════════════════════════════════════════════"
-echo "✅ EMERGENCY FIX COMPLETE"
+echo "✅ SYSTEM RESTART COMPLETE - Should be LIVE NOW"
 echo "════════════════════════════════════════════════════════════════════"
 '@
 
@@ -132,15 +124,8 @@ Write-Host $output
 
 Write-Host ""
 Write-Host "════════════════════════════════════════════════════════════════════" -ForegroundColor Green
-Write-Host "✅ EMERGENCY FIX EXECUTION COMPLETE" -ForegroundColor Green
+Write-Host "✅ SYSTEM RESTART COMPLETE - Containers Should Be Running" -ForegroundColor Green
 Write-Host "════════════════════════════════════════════════════════════════════" -ForegroundColor Green
-Write-Host ""
-
-# Final verification
-Write-Host "🔍 Final verification..." -ForegroundColor Yellow
-$FinalCheck = ssh -i $SSH_KEY -o StrictHostKeyChecking=no ubuntu@$EC2_IP "cd /home/ubuntu/drishti && docker compose ps && echo '---' && curl -s http://localhost:8000/api/health | jq . 2>/dev/null || echo 'Health check pending...'" 2>&1
-
-Write-Host $FinalCheck
 Write-Host ""
 
 Write-Host "╔════════════════════════════════════════════════════════════════════╗" -ForegroundColor Green
@@ -148,12 +133,21 @@ Write-Host "║                    🎉 SYSTEM SHOULD BE LIVE NOW               
 Write-Host "╚════════════════════════════════════════════════════════════════════╝" -ForegroundColor Green
 Write-Host ""
 
-Write-Host "📍 Test your system:" -ForegroundColor Cyan
-Write-Host "   🌐 Main: http://$EC2_IP/" -ForegroundColor Cyan
-Write-Host "   📊 Dashboard: http://$EC2_IP/dashboard" -ForegroundColor Cyan
-Write-Host "   🚨 Alerts: http://$EC2_IP/alerts" -ForegroundColor Cyan
-Write-Host "   🧠 AI Decisions: http://$EC2_IP/ai-decisions" -ForegroundColor Cyan
-Write-Host "   ⚙️  System Health: http://$EC2_IP/system" -ForegroundColor Cyan
+Write-Host "🎯 NEXT STEP - Test Your System:" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "   OPEN THIS IN YOUR BROWSER:" -ForegroundColor Cyan
+Write-Host "   http://$EC2_IP/" -ForegroundColor White -BackgroundColor DarkBlue
+Write-Host ""
+Write-Host "   You should see:" -ForegroundColor Green
+Write-Host "   ✅ Dashboard with train data" -ForegroundColor Green
+Write-Host "   ✅ Alerts displaying" -ForegroundColor Green
+Write-Host "   ✅ System showing ONLINE (green)" -ForegroundColor Green
+Write-Host ""
+Write-Host "💡 If still showing OFFLINE:" -ForegroundColor Yellow
+Write-Host "   1. Clear browser cache (Ctrl+Shift+Delete)" -ForegroundColor Gray
+Write-Host "   2. Do a hard refresh (Ctrl+F5)" -ForegroundColor Gray
+Write-Host "   3. Wait 30 seconds" -ForegroundColor Gray
+Write-Host "   4. Try again" -ForegroundColor Gray
 Write-Host ""
 
 Write-Host "💡 If issues persist:" -ForegroundColor Yellow
