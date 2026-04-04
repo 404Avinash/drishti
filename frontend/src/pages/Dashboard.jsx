@@ -4,7 +4,7 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import StatCard from '../components/StatCard'
 import AlertBadge from '../components/AlertBadge'
 import LiveIndicator from '../components/LiveIndicator'
-import { getCurrentTrains, getAlerts, getIngestionSummary, getHealth } from '../api'
+import { getCurrentTrains, getAlerts, getIngestionSummary, getHealth, getLiveStats } from '../api'
 
 const ZONES = ['NR','CR','WR','ER','SR','SER','NFR','NWR','SCR']
 
@@ -77,18 +77,21 @@ export default function Dashboard() {
   const [ingestion, setIngestion] = useState(null)
   const [live,    setLive]      = useState(false)
   const [sparkData, setSparkData] = useState([])
+  const [liveStats, setLiveStats] = useState(null)
 
   const load = async () => {
     try {
-      const [trains, alerts, ingestion, health] = await Promise.all([
+      const [trains, alerts, ingestion, health, stats] = await Promise.all([
         getCurrentTrains(),
         getAlerts(30),
         getIngestionSummary(),
         getHealth(),
+        getLiveStats(),
       ])
       setTrains(trains)
       setAlerts(alerts.slice(0, 20))
       setIngestion(ingestion)
+      setLiveStats(stats)
       setSparkData(prev => {
         const next = [...prev, {
           time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
@@ -102,9 +105,12 @@ export default function Dashboard() {
 
   useEffect(() => { load(); const iv = setInterval(load, 8000); return () => clearInterval(iv) }, [])
 
-  const critical = trains.filter(t => t.stress_level === 'CRITICAL').length
-  const high     = trains.filter(t => t.stress_level === 'HIGH').length
-  const critAlerts = alerts.filter(a => a.severity === 'CRITICAL').length
+  const critical   = trains.filter(t => t.stress_level === 'CRITICAL').length
+  const high        = trains.filter(t => t.stress_level === 'HIGH').length
+  // Alert counts come from the streaming alert_buffer via /api/stats
+  // so they match exactly what the Alerts page shows
+  const alertCritical = liveStats?.alert_critical ?? alerts.filter(a => a.severity === 'CRITICAL').length
+  const alertTotal    = liveStats?.alert_total    ?? alerts.length
 
   // Zone distribution
   const zoneCounts = {}
@@ -121,10 +127,10 @@ export default function Dashboard() {
 
       {/* KPI row */}
       <div style={{ display: 'flex', gap: 14, marginBottom: 24, flexWrap: 'wrap' }}>
-        <StatCard label="Active Trains"    value={trains.length}  color="var(--cyan)"   icon="⟁" sub="Across all IR zones" />
-        <StatCard label="Critical Stress"  value={critical}       color="var(--red)"    icon="⊗" sub="Immediate attention required" />
-        <StatCard label="High Stress"      value={high}           color="var(--orange)" icon="⚠" sub="Elevated risk zones" />
-        <StatCard label="Alerts (24h)"     value={critAlerts}     color="var(--purple)" icon="◉" sub="Critical severity events" />
+        <StatCard label="Active Trains"    value={trains.length}    color="var(--cyan)"   icon="⟁" sub="Across all IR zones" />
+        <StatCard label="Critical Stress"  value={critical}         color="var(--red)"    icon="⊗" sub="Delay > 60 min" />
+        <StatCard label="High Stress"      value={high}             color="var(--orange)" icon="⚠" sub="Delay 30–60 min" />
+        <StatCard label="Alerts (stream)"  value={alertTotal}       color="var(--purple)" icon="◉" sub={`${alertCritical} critical — streaming engine`} />
       </div>
 
       {/* Main grid */}

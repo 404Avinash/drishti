@@ -241,7 +241,7 @@ app.include_router(trains_router)
 
 stats = {
     "total": 0, "critical": 0, "high": 0, "medium": 0, "low": 0,
-    "trains_monitored": 9182,
+    "trains_monitored": 0,   # updated from DB on each /api/stats call
     "nodes_watched": 51,
     "batches_processed": 0,
     "uptime_start": datetime.now().isoformat(),
@@ -542,8 +542,15 @@ async def health():
 
 
 @app.get("/api/stats")
-async def get_stats():
+async def get_stats(db: Session = Depends(get_db)):
     uptime = int((datetime.now() - datetime.fromisoformat(stats["uptime_start"])).total_seconds())
+    # Get real train count from DB
+    try:
+        from backend.db.models import Train
+        real_train_count = db.query(Train).filter(Train.is_active.is_(True)).count()
+        stats["trains_monitored"] = real_train_count
+    except Exception:
+        pass
     return {
         **stats,
         "uptime_seconds": uptime,
@@ -958,6 +965,7 @@ async def ai_decisions(limit: int = Query(20, le=100)):
             "data_sources":  ["NTES live telemetry", "CRS accident corpus (1981–2023)", "IR network graph (51 nodes)"],
         },
     }
+
 
 
 @app.get("/api/train/{train_id}/risk")
