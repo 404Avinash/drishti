@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 # ── IMPORT ALL INTELLIGENCE MODULES ─────────────────────────────────────
 from backend.api import cascade_viz, alert_reasoning, trains_router, data_endpoints, simulation
-from backend.db.session import get_db
+from backend.db.session import get_db, test_database_connection
 from backend.db.migrations import run_migrations
 # Note: ML modules imported dynamically when needed
 
@@ -61,8 +61,14 @@ async def startup_event():
     """Initialize on app startup."""
     logger.info("🚀 DRISHTI Backend starting...")
     
+    # ── Test Database Connection ──
+    logger.info("🔍 Testing database connectivity...")
+    if not test_database_connection(verbose=True):
+        logger.error("❌ Database connection test failed - check DATABASE_URL and RDS availability")
+        raise RuntimeError("Cannot connect to database. Ensure RDS is running and accessible.")
+    
     # ── Initialize database tables ──
-    logger.info("Initializing database...")
+    logger.info("🔄 Initializing database...")
     try:
         applied = run_migrations()
         if applied:
@@ -71,11 +77,15 @@ async def startup_event():
             logger.info("✅ Database already initialized")
     except Exception as e:
         logger.error(f"❌ Database initialization failed: {e}")
+        logger.error("This is typically caused by:")
+        logger.error("  1. RDS database not running or not accessible")
+        logger.error("  2. Security groups not allowing EC2->RDS traffic")
+        logger.error("  3. DATABASE_URL environment variable not set correctly")
         raise
     
     print("""
     ================================================================================
-    DRISHTI PRODUCTION INTELLIGENCE ENGINE
+    ✅ DRISHTI PRODUCTION INTELLIGENCE ENGINE STARTING
     
     ✓ Real-time Train Telemetry Ingestion (100+ trains/second)
     ✓ Cascade Propagation Simulator (Network analysis)
