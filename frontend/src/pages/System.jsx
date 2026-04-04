@@ -103,7 +103,7 @@ export default function System() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14, marginBottom: 20 }}>
         <HealthCard name="API Server"       icon="⊞" status={health?.status || 'unknown'}                          detail="FastAPI · Python 3.11 · Uvicorn"      metricLabel="Response" metric={health ? '< 50ms' : null} />
         <HealthCard name="Database"         icon="◫" status={health?.database || 'unknown'}                         detail="PostgreSQL 15 · AWS RDS · us-east-1"  metricLabel="Connections" metric={health?.db_connections ?? null} />
-        <HealthCard name="WebSocket"        icon="◈" status={health?.websocket_connections > 0 ? 'ok' : 'standby'} detail="NTES telemetry stream processor"       metricLabel="Active WS" metric={health?.websocket_connections ?? 0} />
+        <HealthCard name="WebSocket"        icon="◈" status={health?.websocket_connections >= 0 ? 'ok' : 'unknown'} detail="NTES telemetry stream processor"       metricLabel="Active WS" metric={health?.websocket_connections ?? 0} />
         <HealthCard name="Bayesian Engine"  icon="⬙" status="ok"                                                    detail="pgmpy 0.1.26 · Variable Elimination"  metricLabel="Models" metric="4 active" />
         <HealthCard name="Alert Pipeline"   icon="⚠" status="ok"                                                    detail="Real-time event detection"           metricLabel="Threshold" metric="< 100ms" />
         <HealthCard name="Docker Runtime"  icon="◻" status="ok"                                                    detail="2 containers · drishti-api & frontend" metricLabel="Version" metric="v24+" />

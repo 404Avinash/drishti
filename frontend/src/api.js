@@ -9,7 +9,7 @@
  *   GET /api/trains/ingestion/summary → { total_records: { received, valid, persisted }, by_source }
  *   GET /api/alerts/history         → { alerts: [...], total }
  *   GET /api/network/pulse          → { nodes: [...], links: [...] }
- *   GET /api/health                 → { status: "healthy", connections, ... }
+ *   GET /api/health                 → { status: "ok", database: "ok", websocket_connections: 0, ... }
  *   GET /api/stats                  → { total, critical, high, medium, low, ... }
  */
 
@@ -28,8 +28,8 @@ export async function getHealth() {
     const d = await _get('/health')
     return {
       status:               d.status === 'healthy' || d.status === 'ok' ? 'ok' : d.status,
-      websocket_connections: d.connections ?? 0,
-      database:             d.status === 'healthy' ? 'ok' : 'unknown',
+      websocket_connections: d.websocket_connections ?? 0,
+      database:             d.database ?? 'ok',
       started_at:           null,      // not exposed by backend yet
       bayesian_network:     d.bayesian_network ?? false,
       cascade_engine:       d.cascade_engine   ?? false,
@@ -202,8 +202,11 @@ export async function getAlerts(limit = 200) {
 // ── Network ────────────────────────────────────────────────────────────────────
 
 export async function getNetworkPulse() {
-  try { return await _get('/network/pulse') }
-  catch { return { nodes: [], links: [] } }
+  try { 
+    let d = await _get('/cascade/network-topology').catch(() => null)
+    if (!d) d = await _get('/network/pulse')
+    return d || { nodes: [], links: [] }
+  } catch { return { nodes: [], links: [] } }
 }
 
 export async function getNetworkNodes(zone, minStress) {
@@ -211,9 +214,18 @@ export async function getNetworkNodes(zone, minStress) {
     const params = new URLSearchParams()
     if (zone)      params.set('zone', zone)
     if (minStress) params.set('min_stress', minStress)
-    const d = await _get(`/network/nodes?${params}`)
-    return d.nodes ?? []
-  } catch { return [] }
+    // Try cascade endpoint first, then network
+    let d = await _get(`/cascade/network-topology?${params}`).catch(() => null)
+    if (!d) d = await _get(`/network/nodes?${params}`)
+    return (d?.nodes ?? d?.junctions ?? []).map(n => ({
+      id: n.id || n.junction || n.code,
+      name: n.name || n.label,
+      zone: n.zone,
+      stress: n.stress || n.stress_level || 'STABLE',
+    }))
+  } catch { 
+    return [] 
+  }
 }
 
 // ── Zone coverage ──────────────────────────────────────────────────────────────
