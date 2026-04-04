@@ -3,25 +3,25 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { getAlerts } from '../api'
 
 const NAV_LINKS = [
-  { to: '/dashboard',    label: 'Dashboard',     icon: '⬡' },
-  { to: '/network',      label: 'Network',       icon: '◎' },
-  { to: '/trains',       label: 'Trains',        icon: '⟁' },
-  { to: '/simulation',   label: 'Simulation',    icon: '⚡' },
-  { to: '/alerts',       label: 'Alerts',        icon: '⚠' },
-  { to: '/ai',           label: 'AI Brain',      icon: '⬙' },
-  { to: '/ai-decisions', label: 'AI Decisions',  icon: '🧠' },
-  { to: '/system',       label: 'System',        icon: '⊞' },
+  { to: '/dashboard', label: 'Dashboard', icon: '⬡' },
+  { to: '/network', label: 'Network', icon: '◎' },
+  { to: '/trains', label: 'Trains', icon: '⟁' },
+  { to: '/simulation', label: 'Simulation', icon: '⚡' },
+  { to: '/alerts', label: 'Alerts', icon: '⚠' },
+  { to: '/ai', label: 'AI Brain', icon: '⬙' },
+  { to: '/ai-decisions', label: 'AI Decisions', icon: '🧠' },
+  { to: '/system', label: 'System', icon: '⊞' },
 ]
 
 export default function Navbar() {
-  const [critCount, setCritCount]   = useState(0)
-  const [connected, setConnected]   = useState(false)
+  const [critCount, setCritCount] = useState(0)
+  const [connected, setConnected] = useState(false)
   const navigate = useNavigate()
 
   useEffect(() => {
     const check = async () => {
       try {
-        const res  = await fetch('/api/health')
+        const res = await fetch('/api/health')
         setConnected(res.ok)
         const data = await res.json()
         setConnected(data.status === 'ok' || data.status === 'healthy')
@@ -32,7 +32,7 @@ export default function Navbar() {
 
     const loadAlerts = async () => {
       try {
-        const res  = await fetch('/api/alerts/unified?limit=50')
+        const res = await fetch('/api/alerts/unified?limit=50')
         if (res.ok) {
           const data = await res.json()
           const arr = Array.isArray(data) ? data : (data.alerts ?? [])
