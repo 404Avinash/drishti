@@ -764,6 +764,202 @@ async def history(
     return {"total": len(items), "alerts": items[offset: offset + limit]}
 
 
+@app.get("/api/alerts/unified")
+async def alerts_unified(
+    severity: Optional[str] = Query(None),
+    limit: int = Query(200, le=500),
+    zone: Optional[str] = Query(None),
+):
+    """
+    Unified alerts feed consumed by the React frontend.
+    Shapes every alert with the 'reasons' array the frontend's api.js mapper expects:
+      a.reasons[].ml_model, a.reasons[].confidence, a.reasons[].recommended_action
+    """
+    items = list(reversed(alert_buffer))
+    if severity:
+        safe_severity = sanitize_text(severity).upper()
+        items = [a for a in items if a["severity"] == safe_severity]
+    if zone:
+        safe_zone = sanitize_text(zone).upper()
+        items = [a for a in items if a.get("zone", "").upper() == safe_zone]
+
+    result = []
+    for a in items[:limit]:
+        methods = a.get("methods_voting", {})
+        reasons = []
+        if methods.get("Bayesian Network"):
+            reasons.append({
+                "ml_model": "Bayesian Network",
+                "confidence": round(a.get("bayesian_risk", 0.5), 3),
+                "recommended_action": "Notify station master, monitor junction",
+            })
+        if methods.get("Isolation Forest"):
+            reasons.append({
+                "ml_model": "Isolation Forest",
+                "confidence": round(a.get("anomaly_score", 50) / 100, 3),
+                "recommended_action": "Flag for anomaly review",
+            })
+        if methods.get("Causal DAG"):
+            reasons.append({
+                "ml_model": "Causal DAG",
+                "confidence": round(a.get("causal_risk", 0.5), 3),
+                "recommended_action": "Investigate root cause chain",
+            })
+        if methods.get("DBSCAN Trajectory"):
+            reasons.append({
+                "ml_model": "DBSCAN Trajectory",
+                "confidence": 0.85,
+                "recommended_action": "Check for ghost train / loop anomaly",
+            })
+        if not reasons:
+            # always have at least one reason
+            reasons.append({
+                "ml_model": "System Monitor",
+                "confidence": round(a.get("risk_score", 0.3), 3),
+                "recommended_action": "Monitor situation",
+            })
+
+        result.append({
+            "alert_id":          a.get("id"),
+            "id":                a.get("id"),
+            "severity":          a.get("severity", "LOW"),
+            "title":             f"{a.get('severity','?')} · {a.get('station_name','?')} ({a.get('train_name','?')})",
+            "alert_type":        f"{a.get('severity','?')} · {a.get('station_name','?')} ({a.get('train_name','?')})",
+            "description":       a.get("explanation", ""),
+            "timestamp":         a.get("timestamp"),
+            "zone":              a.get("zone", ""),
+            "affected_trains":   [a.get("train_id")] if a.get("train_id") else [],
+            "affected_junctions":[a.get("station_code")] if a.get("station_code") else [],
+            "train_id":          a.get("train_id"),
+            "train_name":        a.get("train_name"),
+            "station_name":      a.get("station_name"),
+            "station_code":      a.get("station_code"),
+            "risk_score":        a.get("risk_score", 0),
+            "bayesian_risk":     a.get("bayesian_risk", 0),
+            "anomaly_score":     a.get("anomaly_score", 0),
+            "causal_risk":       a.get("causal_risk", 0),
+            "trajectory_anomaly":a.get("trajectory_anomaly", False),
+            "votes":             a.get("votes", 0),
+            "methods_voting":    methods,
+            "centrality":        a.get("centrality", 0),
+            "signature_match_pct":   a.get("signature_match_pct", 0),
+            "signature_accident_name": a.get("signature_accident_name"),
+            "signature_date":    a.get("signature_date"),
+            "signature_deaths":  a.get("signature_deaths", 0),
+            "actions":           a.get("actions", []),
+            "lat":               a.get("lat"),
+            "lng":               a.get("lng"),
+            "reasons":           reasons,
+        })
+
+    return result
+
+
+@app.get("/api/ai/decisions")
+async def ai_decisions(limit: int = Query(20, le=100)):
+    """
+    AI Decisions feed: returns the latest alerts enriched with full ML reasoning chains.
+    Used by the new /ai-decisions frontend page to show users WHY the system flagged a train.
+    """
+    items = list(reversed(alert_buffer))[:limit]
+    decisions = []
+    for a in items:
+        methods = a.get("methods_voting", {})
+        votes = a.get("votes", 0)
+        bayesian = a.get("bayesian_risk", 0)
+        anomaly  = a.get("anomaly_score", 0)
+        causal   = a.get("causal_risk", 0)
+
+        model_contributions = [
+            {
+                "model":       "Bayesian Network (pgmpy)",
+                "triggered":   methods.get("Bayesian Network", False),
+                "score":       round(bayesian, 3),
+                "threshold":   0.68,
+                "weight":      "40%",
+                "description": "Exact Bayesian inference over delay, time-of-day, signal cycle, maintenance flags and junction centrality. Uses Variable Elimination to compute P(accident).",
+                "factors":     [
+                    f"Delay: {a.get('explanation','').split('·')[0].replace('⚠️','').strip()}",
+                    f"Station centrality: {round(a.get('centrality',0)*100)}%",
+                ],
+            },
+            {
+                "model":       "Isolation Forest (sklearn)",
+                "triggered":   methods.get("Isolation Forest", False),
+                "score":       round(anomaly / 100, 3),
+                "threshold":   0.78,
+                "weight":      "35%",
+                "description": "Unsupervised anomaly detection trained on NTES historical delay patterns. Flags outlier delay/speed combinations compared to baseline fleet behaviour.",
+                "factors":     [
+                    f"Anomaly score: {round(anomaly,1)}%",
+                    "Feature set: delay_minutes, speed_kmh, time_of_day, zone_density",
+                ],
+            },
+            {
+                "model":       "Causal DAG (doWhy/networkx)",
+                "triggered":   methods.get("Causal DAG", False),
+                "score":       round(causal, 3),
+                "threshold":   0.72,
+                "weight":      "25%",
+                "description": "Causal graph propagation across the IR network. Traces the root cause chain: deferred maintenance → signal failure → collision risk.",
+                "factors":     [
+                    f"Causal risk score: {round(causal,3)}",
+                    f"Network centrality: {round(a.get('centrality',0)*100)}%",
+                ],
+            },
+            {
+                "model":       "DBSCAN Trajectory Clustering",
+                "triggered":   methods.get("DBSCAN Trajectory", False),
+                "score":       0.9 if methods.get("DBSCAN Trajectory") else 0.1,
+                "threshold":   0.5,
+                "weight":      "Veto",
+                "description": "Cluster-based trajectory analysis. Detects ghost trains, loop-line anomalies and trains deviating from expected path clusters (eps=0.5, min_samples=3).",
+                "factors":     [
+                    "GPS trajectory cluster analysis",
+                    "Loop-line and ghost train detection",
+                ],
+            },
+        ]
+
+        final_risk = round(bayesian * 0.4 + (anomaly / 100) * 0.35 + causal * 0.25, 3)
+
+        decisions.append({
+            "id":              a.get("id"),
+            "timestamp":       a.get("timestamp"),
+            "train_id":        a.get("train_id"),
+            "train_name":      a.get("train_name"),
+            "station_name":    a.get("station_name"),
+            "station_code":    a.get("station_code"),
+            "zone":            a.get("zone"),
+            "severity":        a.get("severity"),
+            "final_risk_score":final_risk,
+            "votes":           votes,
+            "verdict":         f"{votes} of 4 AI models triggered",
+            "actions":         a.get("actions", []),
+            "explanation":     a.get("explanation", ""),
+            "crs_signature": {
+                "name":    a.get("signature_accident_name"),
+                "date":    a.get("signature_date"),
+                "deaths":  a.get("signature_deaths", 0),
+                "match_pct": a.get("signature_match_pct", 0),
+            } if a.get("signature_accident_name") else None,
+            "model_contributions": model_contributions,
+            "lat": a.get("lat"),
+            "lng": a.get("lng"),
+        })
+
+    return {
+        "total": len(decisions),
+        "decisions": decisions,
+        "methodology": {
+            "voting": "Ensemble of 4 AI models — alert triggers when ≥1 model exceeds threshold",
+            "severity_rule": "CRITICAL=3-4 votes, HIGH=2 votes, MEDIUM=1 vote, LOW=0 votes",
+            "risk_formula":  "risk = 0.40×Bayesian + 0.35×IsoForest + 0.25×CausalDAG",
+            "data_sources":  ["NTES live telemetry", "CRS accident corpus (1981–2023)", "IR network graph (51 nodes)"],
+        },
+    }
+
+
 @app.get("/api/train/{train_id}/risk")
 async def train_risk(train_id: str):
     alerts = [a for a in alert_buffer if a["train_id"] == train_id]

@@ -3,13 +3,14 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { getAlerts } from '../api'
 
 const NAV_LINKS = [
-  { to: '/dashboard',  label: 'Dashboard',   icon: '⬡' },
-  { to: '/network',    label: 'Network',     icon: '◎' },
-  { to: '/trains',     label: 'Trains',      icon: '⟁' },
-  { to: '/simulation', label: 'Simulation',  icon: '⚡' },
-  { to: '/alerts',     label: 'Alerts',      icon: '⚠' },
-  { to: '/ai',         label: 'AI Brain',    icon: '⬙' },
-  { to: '/system',     label: 'System',      icon: '⊞' },
+  { to: '/dashboard',    label: 'Dashboard',     icon: '⬡' },
+  { to: '/network',      label: 'Network',       icon: '◎' },
+  { to: '/trains',       label: 'Trains',        icon: '⟁' },
+  { to: '/simulation',   label: 'Simulation',    icon: '⚡' },
+  { to: '/alerts',       label: 'Alerts',        icon: '⚠' },
+  { to: '/ai',           label: 'AI Brain',      icon: '⬙' },
+  { to: '/ai-decisions', label: 'AI Decisions',  icon: '🧠' },
+  { to: '/system',       label: 'System',        icon: '⊞' },
 ]
 
 export default function Navbar() {
@@ -31,10 +32,11 @@ export default function Navbar() {
 
     const loadAlerts = async () => {
       try {
-        const res  = await fetch('/api/alerts/history?limit=50')
+        const res  = await fetch('/api/alerts/unified?limit=50')
         if (res.ok) {
           const data = await res.json()
-          setCritCount(Array.isArray(data) ? data.filter(a => a.severity === 'CRITICAL').length : 0)
+          const arr = Array.isArray(data) ? data : (data.alerts ?? [])
+          setCritCount(arr.filter(a => a.severity === 'CRITICAL').length)
         }
       } catch { /* silent */ }
     }
