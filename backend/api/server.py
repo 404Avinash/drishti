@@ -241,7 +241,7 @@ app.include_router(trains_router)
 
 stats = {
     "total": 0, "critical": 0, "high": 0, "medium": 0, "low": 0,
-    "trains_monitored": 9182,
+    "trains_monitored": 0,   # updated from DB on each /api/stats call
     "nodes_watched": 51,
     "batches_processed": 0,
     "uptime_start": datetime.now().isoformat(),
@@ -542,8 +542,15 @@ async def health():
 
 
 @app.get("/api/stats")
-async def get_stats():
+async def get_stats(db: Session = Depends(get_db)):
     uptime = int((datetime.now() - datetime.fromisoformat(stats["uptime_start"])).total_seconds())
+    # Get real train count from DB
+    try:
+        from backend.db.models import Train
+        real_train_count = db.query(Train).filter(Train.is_active.is_(True)).count()
+        stats["trains_monitored"] = real_train_count
+    except Exception:
+        pass
     return {
         **stats,
         "uptime_seconds": uptime,
@@ -762,6 +769,23 @@ async def history(
         safe_zone = sanitize_text(zone).upper()
         items = [a for a in items if a.get("zone", "").upper() == safe_zone]
     return {"total": len(items), "alerts": items[offset: offset + limit]}
+
+
+@app.get("/api/alerts/unified")
+async def alerts_unified(
+    severity: Optional[str] = Query(None),
+    limit: int = Query(50, le=200),
+    zone: Optional[str] = Query(None),
+):
+    """Alias for /api/alerts/history — kept for backward compatibility."""
+    items = list(reversed(alert_buffer))
+    if severity:
+        safe_severity = sanitize_text(severity).upper()
+        items = [a for a in items if a["severity"] == safe_severity]
+    if zone:
+        safe_zone = sanitize_text(zone).upper()
+        items = [a for a in items if a.get("zone", "").upper() == safe_zone]
+    return {"total": len(items), "alerts": items[:limit]}
 
 
 @app.get("/api/train/{train_id}/risk")
