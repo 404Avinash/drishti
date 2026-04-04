@@ -9,6 +9,7 @@ import Alerts from './pages/Alerts'
 import Models from './pages/Models'
 import System from './pages/System'
 import Simulation from './pages/Simulation'
+import AIDecisions from './pages/AIDecisions'
 import './index.css'
 import './App.css'
 
@@ -40,6 +41,7 @@ export default function App() {
           <Route path="/ai"         element={<Models />} />
           <Route path="/system"     element={<System />} />
           <Route path="/simulation" element={<Simulation />} />
+          <Route path="/ai-decisions" element={<AIDecisions />} />
         </Route>
       </Routes>
     </BrowserRouter>
