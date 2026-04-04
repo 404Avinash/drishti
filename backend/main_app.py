@@ -10,9 +10,10 @@ import json
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
-# ── IMPORT ALL INTELLIGENCE MODULES ─────────────────────────────────────────
+# ── IMPORT ALL INTELLIGENCE MODULES ─────────────────────────────────────
 from backend.api import cascade_viz, alert_reasoning, trains_router, data_endpoints, simulation
 from backend.db.session import get_db
+from backend.db.migrations import run_migrations
 # Note: ML modules imported dynamically when needed
 
 logging.basicConfig(level=logging.INFO)
@@ -59,6 +60,19 @@ app = FastAPI(
 async def startup_event():
     """Initialize on app startup."""
     logger.info("🚀 DRISHTI Backend starting...")
+    
+    # ── Initialize database tables ──
+    logger.info("Initializing database...")
+    try:
+        applied = run_migrations()
+        if applied:
+            logger.info(f"✅ Applied migrations: {applied}")
+        else:
+            logger.info("✅ Database already initialized")
+    except Exception as e:
+        logger.error(f"❌ Database initialization failed: {e}")
+        raise
+    
     print("""
     ================================================================================
     DRISHTI PRODUCTION INTELLIGENCE ENGINE

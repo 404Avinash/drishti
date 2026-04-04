@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 import re
 from typing import Iterable
@@ -76,8 +77,8 @@ def run_migrations() -> list[str]:
             for statement in _split_sql_statements(sql):
                 conn.execute(text(statement))
             conn.execute(
-                text("INSERT INTO schema_migrations(version) VALUES (:version)"),
-                {"version": version},
+                text("INSERT INTO schema_migrations(version, applied_at) VALUES (:version, :applied_at)"),
+                {"version": version, "applied_at": datetime.now(timezone.utc)},
             )
         executed.append(version)
 
