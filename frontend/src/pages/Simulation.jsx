@@ -487,172 +487,140 @@ export default function Simulation() {
       {/* TAB 2: Historical Incidents */}
       {activeTab === 'historical' && (
         <div className="historical-tab">
+          {/* Full Screen Map */}
           <div className="historical-grid">
-            {/* Map Section */}
-            <div className="map-section">
-              <div className="map-header">
-                <h3>📍 Railway Zones & Incident Locations</h3>
-                <p className="map-subtitle">Click incidents to explore detailed analysis</p>
-              </div>
-              <div className="leaflet-wrapper">
-                {/* Map Updater Component */}
-                {(() => {
-                  function MapUpdater({ selectedIncident }) {
-                    const map = useMap();
-                    
-                    useEffect(() => {
-                      if (selectedIncident) {
-                        // Zoom to incident location with animation
-                        map.flyTo(selectedIncident.coordinates, 8, {
-                          duration: 1.5
-                        });
-                      }
-                    }, [selectedIncident, map]);
-                    
-                    return null;
+            {(() => {
+              function MapUpdater({ selectedIncident }) {
+                const map = useMap();
+                
+                useEffect(() => {
+                  if (selectedIncident) {
+                    // Zoom to incident location with animation
+                    map.flyTo(selectedIncident.coordinates, 9, {
+                      duration: 1.5
+                    });
                   }
+                }, [selectedIncident, map]);
+                
+                return null;
+              }
+              
+              return (
+                <MapContainer
+                  center={indiaZone.center}
+                  zoom={indiaZone.zoom}
+                  style={{ height: '100%', width: '100%', position: 'absolute', top: 0, left: 0 }}
+                  className="map-container-leaflet"
+                >
+                  <TileLayer
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    attribution='&copy; OpenStreetMap contributors'
+                  />
                   
-                  return (
-                    <MapContainer
-                      center={indiaZone.center}
-                      zoom={indiaZone.zoom}
-                      style={{ height: '100%', width: '100%' }}
-                      className="map-container-leaflet"
-                    >
-                      <TileLayer
-                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                        attribution='&copy; OpenStreetMap contributors'
-                      />
-                      
-                      <MapUpdater selectedIncident={selectedIncident} />
+                  <MapUpdater selectedIncident={selectedIncident} />
 
-                          {/* Historical Incidents Markers - Custom Icons */}
-                      {historicalIncidents.map((incident, idx) => {
-                        const colors = ['#FF6B6B', '#FF9800', '#9C27B0', '#00BCD4'];
-                        const color = colors[idx % colors.length];
-                        return (
-                          <Marker
-                            key={incident.id}
-                            position={incident.coordinates}
-                            icon={L.divIcon({
-                              html: `<div class="custom-marker" style="background: ${color}; box-shadow: 0 0 20px ${color}80;"><span>📍</span></div>`,
-                              className: 'custom-marker-container',
-                              iconSize: [50, 50],
-                              iconAnchor: [25, 50],
-                              popupAnchor: [0, -50],
-                            })}
-                            onClick={() => setSelectedIncident(incident)}
-                          >
-                            <Popup className="custom-popup">
-                              <div className="popup-content">
-                                <strong>{incident.name}</strong><br />
-                                <span style={{fontSize: '11px'}}>{incident.date}</span><br />
-                                <span style={{fontSize: '12px', fontWeight: 'bold', color: color}}>{incident.deaths} deaths</span>
-                              </div>
-                            </Popup>
-                          </Marker>
-                        );
-                      })}
-                    </MapContainer>
-                  );
-                })()}
-              </div>
-              <div className="map-legend">
-                <div className="legend-item">
-                  <span className="legend-dot" style={{background: '#FF6B6B'}}></span>
-                  <span>Balasore (2023)</span>
-                </div>
-                <div className="legend-item">
-                  <span className="legend-dot" style={{background: '#FF9800'}}></span>
-                  <span>Hindamata (2017)</span>
-                </div>
-                <div className="legend-item">
-                  <span className="legend-dot" style={{background: '#9C27B0'}}></span>
-                  <span>Elphinstone (2017)</span>
-                </div>
-                <div className="legend-item">
-                  <span className="legend-dot" style={{background: '#00BCD4'}}></span>
-                  <span>Pukhrayan (2016)</span>
-                </div>
-              </div>
+                  {/* Historical Incidents Markers - Custom Icons */}
+                  {historicalIncidents.map((incident, idx) => {
+                    const colors = ['#FF6B6B', '#FF9800', '#9C27B0', '#00BCD4'];
+                    const color = colors[idx % colors.length];
+                    return (
+                      <Marker
+                        key={incident.id}
+                        position={incident.coordinates}
+                        icon={L.divIcon({
+                          html: `<div class="custom-marker" style="background: ${color}; box-shadow: 0 0 20px ${color}80;"><span>📍</span></div>`,
+                          className: 'custom-marker-container',
+                          iconSize: [50, 50],
+                          iconAnchor: [25, 50],
+                          popupAnchor: [0, -50],
+                        })}
+                        onClick={() => setSelectedIncident(incident)}
+                      >
+                        <Popup className="custom-popup">
+                          <div className="popup-content">
+                            <strong>{incident.name}</strong><br />
+                            <span style={{fontSize: '11px'}}>{incident.date}</span><br />
+                            <span style={{fontSize: '12px', fontWeight: 'bold', color: color}}>{incident.deaths} deaths</span>
+                          </div>
+                        </Popup>
+                      </Marker>
+                    );
+                  })}
+                </MapContainer>
+              );
+            })()}
+          </div>
+
+          {/* Overlay: Map Legend Top-Left */}
+          <div className="map-legend-overlay">
+            <div className="legend-item">
+              <span className="legend-dot" style={{background: '#FF6B6B'}}></span>
+              <span>Balasore (2023)</span>
             </div>
-
-            {/* Incidents List */}
-            <div className="incidents-list">
-              <h3>📋 Historical Incidents</h3>
-              <div className="incidents-scroll">
-                {historicalIncidents.map(incident => (
-                  <div
-                    key={incident.id}
-                    className={`incident-card ${selectedIncident?.id === incident.id ? 'selected' : ''}`}
-                    onClick={() => setSelectedIncident(incident)}
-                  >
-                    <div className="incident-header">
-                      <h4>{incident.name}</h4>
-                      <span className="incident-date">{incident.date}</span>
-                    </div>
-                    <p className="incident-location">📍 {incident.location}</p>
-                    <div className="incident-stats">
-                      <span className="stat">
-                        <strong>Deaths:</strong> {incident.deaths}
-                      </span>
-                      <span className="stat">
-                        <strong>Injured:</strong> {incident.injured}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+            <div className="legend-item">
+              <span className="legend-dot" style={{background: '#FF9800'}}></span>
+              <span>Hindamata (2017)</span>
+            </div>
+            <div className="legend-item">
+              <span className="legend-dot" style={{background: '#9C27B0'}}></span>
+              <span>Elphinstone (2017)</span>
+            </div>
+            <div className="legend-item">
+              <span className="legend-dot" style={{background: '#00BCD4'}}></span>
+              <span>Pukhrayan (2016)</span>
             </div>
           </div>
 
-          {/* Selected Incident Details */}
-          {selectedIncident && (
-            <div className="incident-detail">
-              <h2>{selectedIncident.name}</h2>
-              <div className="detail-card">
-                <div className="detail-row">
-                  <label>Date & Location:</label>
-                  <p>{selectedIncident.date} | {selectedIncident.location}</p>
+          {/* Overlay: Incidents List Bottom-Right */}
+          <div className="incidents-list-overlay">
+            <h3>📋 Historical Incidents</h3>
+            <div className="incidents-scroll-overlay">
+              {historicalIncidents.map(incident => (
+                <div
+                  key={incident.id}
+                  className={`incident-card-overlay ${selectedIncident?.id === incident.id ? 'selected' : ''}`}
+                  onClick={() => setSelectedIncident(incident)}
+                >
+                  <div className="incident-header">
+                    <h4>{incident.name}</h4>
+                    <span className="incident-date">{incident.date}</span>
+                  </div>
+                  <p className="incident-location">📍 {incident.location}</p>
+                  <div className="incident-stats">
+                    <span className="stat">
+                      <strong>Deaths:</strong> {incident.deaths}
+                    </span>
+                    <span className="stat">
+                      <strong>Injured:</strong> {incident.injured}
+                    </span>
+                  </div>
                 </div>
-                <div className="detail-row">
-                  <label>Casualties:</label>
-                  <p>
-                    <strong className="critical">{selectedIncident.deaths} Deaths</strong>, 
-                    <strong className="warning"> {selectedIncident.injured} Injured</strong>
-                  </p>
-                </div>
-                <div className="detail-row">
-                  <label>Root Cause:</label>
-                  <p>{selectedIncident.cause}</p>
-                </div>
-                <div className="detail-row">
-                  <label>Description:</label>
-                  <p>{selectedIncident.description}</p>
-                </div>
-              </div>
+              ))}
+            </div>
+          </div>
 
-              {/* DRISHTI Impact */}
-              <div className="drishti-impact-card">
-                <h3>✅ How DRISHTI Would Have Prevented This</h3>
-                <div className="impact-grid">
-                  <div className="impact-item">
-                    <span className="impact-label">Detection Time:</span>
-                    <span className="impact-value">{selectedIncident.drishtiDetection}</span>
-                  </div>
-                  <div className="impact-item">
-                    <span className="impact-label">Lives Saved:</span>
-                    <span className="impact-value success">{selectedIncident.drishtiLivesSaved}+</span>
-                  </div>
-                  <div className="impact-item">
-                    <span className="impact-label">Prevention Rate:</span>
-                    <span className="impact-value success">95%+</span>
-                  </div>
-                  <div className="impact-item">
-                    <span className="impact-label">Intervention Window:</span>
-                    <span className="impact-value">1-2 seconds</span>
-                  </div>
-                </div>
+          {/* Overlay: Selected Incident Details Bottom-Left */}
+          {selectedIncident && (
+            <div className="incident-detail-overlay">
+              <h2>{selectedIncident.name}</h2>
+              <div className="detail-row">
+                <label>Date & Location:</label>
+                <p>{selectedIncident.date} | {selectedIncident.location}</p>
+              </div>
+              <div className="detail-row">
+                <label>Casualties:</label>
+                <p>
+                  <strong style={{color: '#FF6B6B'}}>{selectedIncident.deaths} Deaths</strong>, 
+                  <strong style={{color: '#FFE66D'}}> {selectedIncident.injured} Injured</strong>
+                </p>
+              </div>
+              <div className="detail-row">
+                <label>Root Cause:</label>
+                <p>{selectedIncident.cause}</p>
+              </div>
+              <div className="drishti-impact-mini">
+                <strong>✅ DRISHTI Impact:</strong>
+                <p>{selectedIncident.drishtiDetection} | {selectedIncident.drishtiLivesSaved}+ lives saved</p>
               </div>
             </div>
           )}
