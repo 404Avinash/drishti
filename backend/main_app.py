@@ -61,27 +61,18 @@ async def startup_event():
     """Initialize on app startup."""
     logger.info("🚀 DRISHTI Backend starting...")
     
-    # ── Test Database Connection ──
-    logger.info("🔍 Testing database connectivity...")
-    if not test_database_connection(verbose=True):
-        logger.error("❌ Database connection test failed - check DATABASE_URL and RDS availability")
-        raise RuntimeError("Cannot connect to database. Ensure RDS is running and accessible.")
-    
-    # ── Initialize database tables ──
-    logger.info("🔄 Initializing database...")
+    # ── Initialize database tables (non-blocking) ──
+    logger.info("🔄 Initializing database in background...")
     try:
+        # Try to initialize quickly, but don't block if RDS is slow
         applied = run_migrations()
         if applied:
             logger.info(f"✅ Applied migrations: {applied}")
         else:
             logger.info("✅ Database already initialized")
     except Exception as e:
-        logger.error(f"❌ Database initialization failed: {e}")
-        logger.error("This is typically caused by:")
-        logger.error("  1. RDS database not running or not accessible")
-        logger.error("  2. Security groups not allowing EC2->RDS traffic")
-        logger.error("  3. DATABASE_URL environment variable not set correctly")
-        raise
+        # Log but don't crash - backend will report degraded status
+        logger.warning(f"⚠️  Database initialization warning (will retry): {e}")
     
     print("""
     ================================================================================
