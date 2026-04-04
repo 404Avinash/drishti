@@ -182,8 +182,8 @@
 
 /* Legend Overlay - Top Left */
 .map-legend-overlay {
-  position: fixed;
-  top: 80px;
+  position: absolute;
+  top: 20px;
   left: 20px;
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -207,7 +207,7 @@
 
 /* Incidents List Overlay - Bottom Right */
 .incidents-list-overlay {
-  position: fixed;
+  position: absolute;
   bottom: 20px;
   right: 20px;
   width: 360px;
@@ -382,7 +382,7 @@
 
 /* Incident Detail Overlay - Bottom Left */
 .incident-detail-overlay {
-  position: fixed;
+  position: absolute;
   bottom: 20px;
   left: 20px;
   max-width: 380px;
