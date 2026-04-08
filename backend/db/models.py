@@ -7,6 +7,14 @@ from datetime import datetime, timezone
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
+# pgvector support for embeddings (optional import for SQLite compatibility)
+try:
+    from pgvector.sqlalchemy import Vector
+    PGVECTOR_AVAILABLE = True
+except ImportError:
+    PGVECTOR_AVAILABLE = False
+    Vector = None  # type: ignore
+
 from backend.db.session import Base
 
 
@@ -118,3 +126,46 @@ class TrainTelemetry(Base):
     source: Mapped[str] = mapped_column(String(32), default="ntes_live", nullable=False)
     ingestion_run_id: Mapped[int] = mapped_column(ForeignKey("data_ingestion_runs.id"), nullable=False)
     raw_payload: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+
+
+class CRSAccident(Base):
+    """Historical accident records from Indian Railways CRS system."""
+    __tablename__ = "crs_accidents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    accident_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    date: Mapped[str] = mapped_column(String(16), nullable=False)
+    station: Mapped[str] = mapped_column(String(255), nullable=False)
+    deaths: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    delay_before_accident_minutes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    root_cause: Mapped[str] = mapped_column(String(255), nullable=False)
+    signal_state: Mapped[str] = mapped_column(String(64), nullable=False)
+    track_state: Mapped[str] = mapped_column(String(64), nullable=False)
+    maintenance_active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    narrative_text: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+
+if PGVECTOR_AVAILABLE:
+    class AccidentEmbedding(Base):
+        """Vector embeddings for CRS accident narratives (PostgreSQL + pgvector)."""
+        __tablename__ = "accident_embeddings"
+
+        id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+        accident_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+        embedding: Mapped[Vector] = mapped_column(Vector(384), nullable=False)  # all-MiniLM-L6-v2: 384-dim
+        model_name: Mapped[str] = mapped_column(String(128), default="all-MiniLM-L6-v2", nullable=False)
+        created_at: Mapped[datetime] = mapped_column(
+            DateTime,
+            default=lambda: datetime.now(timezone.utc),
+            nullable=False,
+        )
+        updated_at: Mapped[datetime] = mapped_column(
+            DateTime,
+            default=lambda: datetime.now(timezone.utc),
+            nullable=False,
+        )

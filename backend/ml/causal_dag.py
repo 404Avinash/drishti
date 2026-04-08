@@ -8,7 +8,7 @@ for true exact Bayesian inference.
 
 from typing import Dict, List, Tuple
 import logging
-from pgmpy.models import BayesianNetwork
+from pgmpy.models import DiscreteBayesianNetwork
 from pgmpy.factors.discrete import TabularCPD
 import itertools
 
@@ -37,7 +37,7 @@ class CausalDAGBuilder:
         
         logger.info("Initialized pgmpy CausalDAGBuilder")
     
-    def build_manual_dag(self) -> BayesianNetwork:
+    def build_manual_dag(self) -> DiscreteBayesianNetwork:
         """
         Construct a true causal Bayesian Network based on domain expertise + accident analysis.
         This defines the DAG structure and the exact CPDS.
@@ -58,7 +58,7 @@ class CausalDAGBuilder:
             ("track_mismatch", "accident")
         ]
         
-        self.model = BayesianNetwork(edges)
+        self.model = DiscreteBayesianNetwork(edges)
         
         # 2. Define Priors (base probabilities for root nodes)
         
@@ -157,7 +157,7 @@ class CausalDAGBuilder:
             logger.error(f"DAG validation failed: {e}")
             return False
 
-    def get_pgmpy_model(self) -> BayesianNetwork:
+    def get_pgmpy_model(self) -> DiscreteBayesianNetwork:
         if self.model is None:
             self.build_manual_dag()
         return self.model

@@ -32,6 +32,7 @@ class AccidentRecord:
     train_types: List[str]  # PASSENGER, GOODS, MIXED, FREIGHT
     delay_before_accident_minutes: int
     root_cause: str  # Signal failure, derailment, collision, maintenance error, etc.
+    narrative_text: str = ""  # Raw CRS report narrative (for embeddings + similarity search)
     
     def to_dict(self) -> Dict:
         return asdict(self)
@@ -72,7 +73,8 @@ class CRSParser:
                 time_of_day="NIGHT",
                 train_types=["PASSENGER", "PASSENGER", "GOODS"],
                 delay_before_accident_minutes=45,
-                root_cause="Signal-track mismatch (maintenance reconfiguration)"
+                root_cause="Signal-track mismatch (maintenance reconfiguration)",
+                narrative_text="At 02:47 on June 2, 2023, Konark Express (12841) and Jagannath Express (12003) collided at Bahanaga Bazar junction near Balasore. The main line signal showed GREEN but the loop line was configured MAIN LINE due to incomplete maintenance reconfiguration at 00:15. 12841 was delayed 45 minutes due to signal failures at Talcher Junction. 12003 was on accelerated schedule. Both drivers reported GREEN signal indication. Track geometry check incomplete. 296 deaths, 421 injured. CRS attributed primary cause to maintenance error where signal mapping was not updated after track reconfiguration. Secondary factors: inadequate crew alertness in delayed trains, absence of speed restriction in recovery window."
             ),
             
             # Gaisal 1999
@@ -88,7 +90,8 @@ class CRSParser:
                 time_of_day="NIGHT",
                 train_types=["PASSENGER", "GOODS"],
                 delay_before_accident_minutes=32,
-                root_cause="Signaling error, maintenance zone closure"
+                root_cause="Signaling error, maintenance zone closure",
+                narrative_text="Gaisal Junction collision between Patna-Howrah Express (2301) and a loaded goods train on August 2, 1999 at 03:15. Express was running 32 minutes behind schedule due to brake failures that were partially repaired en route. Goods train diverted to non-standard platform per maintenance zone closure notice issued at 22:00 that night. Signal system entered ERROR state during maintenance window at 02:45. Both trains were cleared into single line through miscommunication between signal tower and station master. 290 deaths. CRS finding: signal error coincided with unexpected goods train reroute. Crew of goods train was unfamiliar with diversion route and did not observe speed restriction signs."
             ),
             
             # Kanchanjungha 2024
@@ -104,7 +107,8 @@ class CRSParser:
                 time_of_day="NIGHT",
                 train_types=["PASSENGER", "GOODS"],
                 delay_before_accident_minutes=41,
-                root_cause="Goods train overshooting red signal"
+                root_cause="Goods train overshooting red signal",
+                narrative_text="Kanchanjungha Express (13015) and a container goods train collided near Agartala on January 16, 2024 at 04:22. Express was operating with 41-minute delay from previous signal failures. Goods train was running heavy load and approached signal at high speed despite RED indication. Brake failure not reported but suspected by investigators. Speed was approximately 65 km/h at signal. Distance available before collision was only 180 meters. 15 deaths, 37 injured. CRS primary finding: goods train crew failed to observe RED signal and did not apply emergency brake. Contributing factors: high consist weight of 92 loaded containers reduced braking efficiency, and recent brake component replacement may not have been properly tested."
             ),
             
             # Khanna 1998
@@ -120,7 +124,8 @@ class CRSParser:
                 time_of_day="NIGHT",
                 train_types=["PASSENGER", "PASSENGER"],
                 delay_before_accident_minutes=38,
-                root_cause="Derailment leading to collision"
+                root_cause="Derailment leading to collision",
+                narrative_text="Double collision at Khanna on November 2, 1998. Express train (3301) derailed due to suspected track fracture near km 247.3, subsequently struck by following train (1407) running 38 minutes late. Initial derailment occurred at 03:24. Track inspection scheduled for 04:00 but not yet completed when 1407 approached. Rail fracture of type RE-60 noted as not fully propagated but reached critical threshold under dynamic loading of 3301. 212 deaths. CRS report states track maintenance interval exceeded recommended schedule by 4 days due to resource shortage. Speed restriction warning not posted on track. Crew of 3301 reported no warning signs prior to derailment."
             ),
             
             # Vizianagaram 2024
@@ -136,7 +141,8 @@ class CRSParser:
                 time_of_day="NIGHT",
                 train_types=["PASSENGER", "GOODS"],
                 delay_before_accident_minutes=29,
-                root_cause="Signal passed at danger"
+                root_cause="Signal passed at danger",
+                narrative_text="Indian Railways accident at Vizianagaram on March 15, 2024 at 05:18. Passenger train (14101) was 29 minutes late and running recovery schedule at increased speed. Goods train was on loop line. Incorrect signal aspect received by 14101 crew showing YELLOW instead of RED. Signal technician reported signal head had accumulated moisture and display was inconsistent. Driver attempted to brake but could not stop within safe distance. 14 deaths, 23 injured. CRS determined signal display fault was primary cause. Device had not been serviced in 8 months. Crew response was reasonable given signal indication received but over-speeding on delayed train contributed to severity."
             ),
             
             # Firozabad 1995
@@ -152,7 +158,8 @@ class CRSParser:
                 time_of_day="NIGHT",
                 train_types=["PASSENGER", "PASSENGER"],
                 delay_before_accident_minutes=25,
-                root_cause="Signal failure, rear collision"
+                root_cause="Signal failure, rear collision",
+                narrative_text="Rare double collision and fire at Firozabad on November 20, 1995 at 02:33. Express train (1007) was running 25 minutes late and was struck by train (1013) after an unplanned stop. Signal system failure prevented safe separation of trains. Both trains caught fire. 358 deaths, highest death toll in independent India. CRS investigation revealed signal electronics failed due to moisture ingress and poor maintenance of signal cabinet. Cables were corroded and connections were not properly secured. Secondary failure: staff notification system was not functional so block controllers were not alerted to signal outage."
             ),
         ]
         

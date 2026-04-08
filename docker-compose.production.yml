@@ -24,9 +24,9 @@ services:
       redis:
         condition: service_healthy
     environment:
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://drishti-redis:6379/0
       - DATABASE_URL=${DATABASE_URL}
-      - LOG_LEVEL=INFO
+      - LOG_LEVEL=info
       - ENVIRONMENT=production
     volumes:
       - drishti_data:/app/data
@@ -46,6 +46,19 @@ services:
       - "80:80"
     depends_on:
       - drishti-api
+
+  # ── Telemetry Producer (Real-time Indian Railway Grid Physics) ───────────────
+  drishti-producer:
+    image: ghcr.io/${GITHUB_REPOSITORY}/backend:latest
+    container_name: drishti-producer
+    restart: always
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - REDIS_URL=redis://drishti-redis:6379/0
+      - LOG_LEVEL=info
+    command: python backend/devops/telemetry_producer.py
 
 volumes:
   redis_data:

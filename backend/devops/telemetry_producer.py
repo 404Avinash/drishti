@@ -52,7 +52,15 @@ class TelemetryDaemon:
     Publishes raw coordinates to a local Redis message broker.
     """
     def __init__(self):
-        self.r = redis.Redis(host='localhost', port=6379, db=0)
+        redis_url = os.environ.get("REDIS_URL", "redis://drishti-redis:6379/0")
+        try:
+            self.r = redis.from_url(redis_url)
+            logger.info(f"Connected to Redis at {redis_url}")
+        except Exception as e:
+            logger.error(f"Failed to connect to Redis: {e}")
+            # Fallback to localhost if misconfigured
+            self.r = redis.Redis(host='localhost', port=6379, db=0)
+
         self.trains = []
         routes = list(RUT.keys())
         
