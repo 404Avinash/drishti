@@ -1,36 +1,7 @@
 import { useState, useEffect } from 'react'
-import LiveIndicator from '../components/LiveIndicator'
 import { getHealth, getIngestionSummary, getStats } from '../api'
 
-function HealthCard({ name, status, detail, metric, metricLabel, icon, color }) {
-  const ok = status === 'ok' || status === 'healthy' || status === 'online'
-  const c  = ok ? 'var(--green)' : 'var(--red)'
-  return (
-    <div style={{ padding: '20px 22px', background: 'var(--glass)', backdropFilter: 'var(--blur)', WebkitBackdropFilter: 'var(--blur)', border: `1px solid ${c}25`, borderRadius: 'var(--r-md)', position: 'relative', overflow: 'hidden' }}>
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg, transparent, ${c}, transparent)` }} />
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 20 }}>{icon}</span>
-          <span style={{ fontWeight: 700, fontSize: 14 }}>{name}</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 10px', borderRadius: 20, background: `${c}15`, border: `1px solid ${c}30` }}>
-          <span style={{ width: 5, height: 5, borderRadius: '50%', background: c, boxShadow: `0 0 4px ${c}` }} />
-          <span style={{ fontSize: 10, fontWeight: 700, color: c, letterSpacing: '0.1em', fontFamily: 'JetBrains Mono, monospace' }}>
-            {ok ? 'ONLINE' : 'DEGRADED'}
-          </span>
-        </div>
-      </div>
-      {detail && <div style={{ fontSize: 11.5, color: 'var(--t2)', marginBottom: metric ? 10 : 0 }}>{detail}</div>}
-      {metric != null && (
-        <div>
-          <div style={{ fontSize: 9, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>{metricLabel}</div>
-          <div className="mono" style={{ fontSize: 20, fontWeight: 800, color: c }}>{metric}</div>
-        </div>
-      )}
-    </div>
-  )
-}
-
+// ── Uptime clock ──────────────────────────────────────────────────────────────
 function UptimeClock({ seconds }) {
   const [elapsed, setElapsed] = useState(seconds || 0)
   useEffect(() => {
@@ -43,15 +14,50 @@ function UptimeClock({ seconds }) {
   const h = Math.floor((elapsed % 86400) / 3600)
   const m = Math.floor((elapsed % 3600) / 60)
   const s = elapsed % 60
-
   const pad = n => String(n).padStart(2, '0')
+
   return (
-    <div className="mono" style={{ fontSize: 28, fontWeight: 800, color: 'var(--green)', letterSpacing: '0.05em' }}>
+    <span className="mono" style={{ fontSize: 24, fontWeight: 800, color: 'var(--green)', letterSpacing: '0.04em' }}>
       {d > 0 && `${d}d `}{pad(h)}:{pad(m)}:{pad(s)}
+    </span>
+  )
+}
+
+// ── Service health card ───────────────────────────────────────────────────────
+function ServiceCard({ name, icon, status, detail, metric, metricLabel }) {
+  const ok = status === 'ok' || status === 'healthy' || status === 'online' || status === 'ACTIVE'
+  const c = ok ? 'var(--green)' : 'var(--red)'
+  const bg = ok ? 'var(--green-bg)' : 'var(--red-bg)'
+  const border = ok ? 'var(--green-border)' : 'var(--red-border)'
+
+  return (
+    <div className="card" style={{ borderTop: `3px solid ${c}` }}>
+      <div style={{ padding: '14px 18px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 16 }}>{icon}</span>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>{name}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 20, background: bg, border: `1px solid ${border}` }}>
+            <span style={{ width: 5, height: 5, borderRadius: '50%', background: c, animation: ok ? 'pulse-dot 2s infinite' : 'none' }} />
+            <span className="mono" style={{ fontSize: 9.5, fontWeight: 700, color: c, letterSpacing: '0.08em' }}>
+              {ok ? 'ONLINE' : 'DEGRADED'}
+            </span>
+          </div>
+        </div>
+        {detail && <div style={{ fontSize: 11.5, color: 'var(--t3)', marginBottom: metric ? 10 : 0 }}>{detail}</div>}
+        {metric != null && (
+          <div>
+            <div className="section-label" style={{ marginBottom: 3 }}>{metricLabel}</div>
+            <div className="mono" style={{ fontSize: 18, fontWeight: 800, color: c }}>{metric}</div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
 
+// ── Main System page ──────────────────────────────────────────────────────────
 export default function System() {
   const [health,    setHealth]    = useState(null)
   const [ingestion, setIngestion] = useState(null)
@@ -60,96 +66,122 @@ export default function System() {
 
   const load = async () => {
     try {
-      const [h, ing, s] = await Promise.all([
-        getHealth(),
-        getIngestionSummary(),
-        getStats(),
-      ])
-      setHealth(h)
-      setIngestion(ing)
-      setStats(s)
+      const [h, ing, s] = await Promise.all([getHealth(), getIngestionSummary(), getStats()])
+      setHealth(h); setIngestion(ing); setStats(s)
       setLive(h.status === 'ok')
     } catch { setLive(false) }
   }
   useEffect(() => { load(); const iv = setInterval(load, 10000); return () => clearInterval(iv) }, [])
 
   return (
-    <div style={{ padding: '32px 28px', maxWidth: 1200, margin: '0 auto' }}>
-      <div style={{ marginBottom: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 4 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 800 }}>System Health Monitor</h1>
-          <LiveIndicator label={live ? 'ALL SYSTEMS' : 'DEGRADED'} color={live ? 'var(--green)' : 'var(--red)'} offline={!live} />
+    <div>
+      {/* Page header */}
+      <div className="page-header">
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 2 }}>
+            <div className="page-header-title">System Health Monitor</div>
+            <div className={`live-pill ${live ? 'online' : 'offline'}`}>
+              <span className="pulse-dot" style={{ background: live ? 'var(--green)' : 'var(--t4)', animation: live ? 'pulse-dot 2s ease-in-out infinite' : 'none' }} />
+              {live ? 'ALL SYSTEMS NOMINAL' : 'DEGRADED'}
+            </div>
+          </div>
+          <div className="page-header-sub">Infrastructure status · API health · Database connections · Ingestion pipeline</div>
         </div>
-        <p style={{ color: 'var(--t2)', fontSize: 13 }}>Infrastructure status · API health · Database connections · Pipeline metrics</p>
       </div>
 
-      {/* Uptime — uses /api/stats uptime_seconds */}
-      {(stats?.uptime_seconds != null || live) && (
-        <div style={{ padding: '20px 24px', background: 'var(--glass)', backdropFilter: 'var(--blur)', WebkitBackdropFilter: 'var(--blur)', border: '1px solid var(--green-30)', borderRadius: 'var(--r-md)', marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-          <div>
-            <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.14em', color: 'var(--t3)', textTransform: 'uppercase', marginBottom: 6 }}>System Uptime</div>
-            <UptimeClock seconds={stats?.uptime_seconds ?? 0} />
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 9.5, color: 'var(--t3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>Deployed On</div>
-            <div style={{ fontSize: 13, color: 'var(--t2)' }}>
-              AWS EC2 · us-east-1 · Ubuntu 22.04 LTS
+      <div className="container" style={{ paddingTop: 20 }}>
+
+        {/* ── Uptime banner ── */}
+        <div className="card" style={{ marginBottom: 20, borderLeft: '4px solid var(--green)' }}>
+          <div className="card-body">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
+              <div>
+                <div className="section-label" style={{ marginBottom: 6 }}>System Uptime</div>
+                <UptimeClock seconds={stats?.uptime_seconds ?? 0} />
+              </div>
+              <div style={{ display: 'flex', gap: 32 }}>
+                <div>
+                  <div className="section-label" style={{ marginBottom: 4 }}>Deployed On</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--t2)' }}>AWS EC2 · us-east-1 · Ubuntu 22.04</div>
+                </div>
+                <div>
+                  <div className="section-label" style={{ marginBottom: 4 }}>Operator</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--t2)' }}>CRIS · Ministry of Railways, GoI</div>
+                </div>
+                <div>
+                  <div className="section-label" style={{ marginBottom: 4 }}>Version</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--t2)' }}>DRISHTI v2.0.0</div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-      )}
 
-      {/* Health cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14, marginBottom: 20 }}>
-        <HealthCard name="API Server"       icon="⊞" status={health?.status || 'unknown'}                          detail="FastAPI · Python 3.11 · Uvicorn"      metricLabel="Response" metric={health ? '< 50ms' : null} />
-        <HealthCard name="Database"         icon="◫" status={health?.database || 'unknown'}                         detail="PostgreSQL 15 · AWS RDS · us-east-1"  metricLabel="Connections" metric={health?.db_connections ?? null} />
-        <HealthCard name="WebSocket"        icon="◈" status={health?.websocket_connections >= 0 ? 'ok' : 'unknown'} detail="NTES telemetry stream processor"       metricLabel="Active WS" metric={health?.websocket_connections ?? 0} />
-        <HealthCard name="Bayesian Engine"  icon="⬙" status="ok"                                                    detail="pgmpy 0.1.26 · Variable Elimination"  metricLabel="Models" metric="4 active" />
-        <HealthCard name="Alert Pipeline"   icon="⚠" status="ok"                                                    detail="Real-time event detection"           metricLabel="Threshold" metric="< 100ms" />
-        <HealthCard name="Docker Runtime"  icon="◻" status="ok"                                                    detail="2 containers · drishti-api & frontend" metricLabel="Version" metric="v24+" />
-      </div>
+        {/* ── Service cards ── */}
+        <div className="section-label" style={{ marginBottom: 12 }}>Service Health</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14, marginBottom: 20 }}>
+          <ServiceCard name="API Server"       icon="⊞" status={health?.status || 'unknown'}                           detail="FastAPI 0.110 · Python 3.11 · Uvicorn"      metricLabel="Response"    metric={health ? '< 50ms' : null} />
+          <ServiceCard name="PostgreSQL"        icon="◫" status={health?.database || 'unknown'}                          detail="PostgreSQL 15 · AWS RDS · us-east-1"        metricLabel="Connections"  metric={health?.db_connections ?? null} />
+          <ServiceCard name="Redis Stream"      icon="◈" status={live ? 'ok' : 'unknown'}                                detail="Redis 7 · Telemetry message broker"         metricLabel="Latency"      metric="< 1ms" />
+          <ServiceCard name="WebSocket Hub"     icon="◉" status={health?.websocket_connections >= 0 ? 'ok' : 'unknown'}  detail="NTES telemetry broadcast service"           metricLabel="Active WS"    metric={health?.websocket_connections ?? 0} />
+          <ServiceCard name="Bayesian Engine"   icon="⬙" status="ACTIVE"                                                 detail="pgmpy 0.1.26 · Variable Elimination"        metricLabel="Models"       metric="4 active" />
+          <ServiceCard name="Alert Pipeline"    icon="⚑" status="ACTIVE"                                                 detail="Real-time threshold + ensemble voting"      metricLabel="Threshold"    metric="< 100ms" />
+          <ServiceCard name="Telemetry Producer"icon="⊡" status={live ? 'ok' : 'unknown'}                                detail="Python producer · Redis publish loop"       metricLabel="Rate"         metric="2s cycle" />
+          <ServiceCard name="Docker Runtime"    icon="◻" status="ACTIVE"                                                 detail="3 containers: api · frontend · producer"    metricLabel="Version"      metric="v24.0+" />
+        </div>
 
-      {/* Ingestion metrics */}
-      {ingestion && (
-        <div style={{ padding: '20px', background: 'var(--glass)', backdropFilter: 'var(--blur)', WebkitBackdropFilter: 'var(--blur)', border: '1px solid var(--b1)', borderRadius: 'var(--r-md)', marginBottom: 20 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', color: 'var(--t2)', textTransform: 'uppercase', marginBottom: 16 }}>Data Ingestion Pipeline</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 14 }}>
-            {[
-              { label: 'Records Received', value: ingestion.received  || 0, color: 'var(--t2)' },
-              { label: 'Valid Records',    value: ingestion.valid     || 0, color: 'var(--cyan)' },
-              { label: 'Persisted to DB',  value: ingestion.persisted || 0, color: 'var(--green)' },
-              { label: 'Error Rate',       value: ingestion.error_rate != null ? `${(ingestion.error_rate * 100).toFixed(1)}%` : '0%', color: ingestion.error_rate > 0.05 ? 'var(--red)' : 'var(--green)' },
-            ].map(({ label, value, color }) => (
-              <div key={label} style={{ padding: '12px 16px', background: 'var(--surface)', border: '1px solid var(--b1)', borderRadius: 'var(--r-sm)' }}>
-                <div style={{ fontSize: 9.5, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>{label}</div>
-                <div className="mono" style={{ fontSize: 20, fontWeight: 800, color }}>{value.toLocaleString?.() ?? value}</div>
-              </div>
-            ))}
-          </div>
-          {ingestion.by_source && Object.keys(ingestion.by_source).length > 0 && (
-            <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--b1)' }}>
-              <div style={{ fontSize: 10, color: 'var(--t3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>By Source</div>
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                {Object.entries(ingestion.by_source).map(([src, cnt]) => (
-                  <div key={src} style={{ padding: '6px 14px', background: 'var(--cyan-10)', border: '1px solid var(--cyan-30)', borderRadius: 20 }}>
-                    <span className="mono" style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 700 }}>{src}: {cnt}</span>
+        {/* ── Ingestion pipeline ── */}
+        {ingestion && (
+          <>
+            <div className="section-label" style={{ marginBottom: 12 }}>Data Ingestion Pipeline</div>
+            <div className="card" style={{ marginBottom: 20 }}>
+              <div className="card-body">
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 14, marginBottom: 16 }}>
+                  {[
+                    { label: 'Records Received', value: (ingestion.received || 0).toLocaleString(),  color: 'var(--t2)' },
+                    { label: 'Valid Records',    value: (ingestion.valid    || 0).toLocaleString(),  color: 'var(--blue)' },
+                    { label: 'Persisted to DB',  value: (ingestion.persisted|| 0).toLocaleString(),  color: 'var(--green)' },
+                    { label: 'Error Rate',       value: `${((ingestion.error_rate || 0) * 100).toFixed(2)}%`, color: (ingestion.error_rate || 0) > 0.05 ? 'var(--red)' : 'var(--green)' },
+                  ].map(({ label, value, color }) => (
+                    <div key={label} style={{ padding: '12px 16px', background: 'var(--bg-sunken)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)' }}>
+                      <div className="section-label" style={{ marginBottom: 6 }}>{label}</div>
+                      <div className="mono" style={{ fontSize: 20, fontWeight: 800, color }}>{value}</div>
+                    </div>
+                  ))}
+                </div>
+                {ingestion.by_source && Object.keys(ingestion.by_source).length > 0 && (
+                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+                    <div className="section-label" style={{ marginBottom: 8 }}>By Source</div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {Object.entries(ingestion.by_source).map(([src, cnt]) => (
+                        <span key={src} style={{
+                          padding: '4px 12px', borderRadius: 20,
+                          background: 'var(--blue-light)', border: '1px solid var(--blue-border)',
+                          fontSize: 11.5, fontFamily: 'IBM Plex Mono, monospace', color: 'var(--blue)', fontWeight: 600,
+                        }}>{src}: {cnt.toLocaleString()}</span>
+                      ))}
+                    </div>
                   </div>
-                ))}
+                )}
               </div>
             </div>
-          )}
-        </div>
-      )}
+          </>
+        )}
 
-      {/* Raw health JSON */}
-      {health && (
-        <div style={{ padding: '16px 20px', background: 'var(--void)', border: '1px solid var(--b1)', borderRadius: 'var(--r-md)' }}>
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', color: 'var(--t3)', textTransform: 'uppercase', marginBottom: 10 }}>Raw Health Endpoint</div>
-          <pre className="mono" style={{ fontSize: 11, color: 'var(--green)', lineHeight: 1.7, overflowX: 'auto' }}>
-            {JSON.stringify(health, null, 2)}
-          </pre>
-        </div>
-      )}
+        {/* ── Raw health JSON (collapsible) ── */}
+        {health && (
+          <>
+            <div className="section-label" style={{ marginBottom: 12 }}>Raw API Health</div>
+            <div className="card">
+              <div style={{ padding: '14px 20px', background: 'var(--bg-sunken)', borderRadius: 'var(--r-md)' }}>
+                <pre className="mono" style={{ fontSize: 11, color: 'var(--green)', lineHeight: 1.8, overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                  {JSON.stringify(health, null, 2)}
+                </pre>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   )
 }

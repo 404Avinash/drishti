@@ -1,26 +1,18 @@
-export default function LiveIndicator({ label = 'LIVE', color = 'var(--green)', offline = false }) {
-  const c = offline ? 'var(--t3)' : color
+/**
+ * LiveIndicator — connection status pill
+ */
+export default function LiveIndicator({ label, offline, color }) {
+  const mode = offline ? 'offline' : 'online'
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <div style={{ position: 'relative', width: 10, height: 10 }}>
-        <span style={{
-          position: 'absolute', inset: 0, borderRadius: '50%',
-          background: c, opacity: offline ? 0.3 : 1,
-        }} />
-        {!offline && (
-          <span style={{
-            position: 'absolute', inset: 0, borderRadius: '50%',
-            background: c, animation: 'ping 1.5s ease-in-out infinite',
-          }} />
-        )}
-      </div>
-      <span style={{
-        fontSize: 10, fontWeight: 700, letterSpacing: '0.16em',
-        color: c, fontFamily: 'JetBrains Mono, monospace',
-        textTransform: 'uppercase',
-      }}>
-        {label}
-      </span>
+    <div className={`live-pill ${mode}`} style={color && !offline ? { color, borderColor: color, background: `${color}12` } : {}}>
+      <span
+        className="pulse-dot"
+        style={{
+          background: offline ? 'var(--t4)' : (color || 'var(--green)'),
+          animation: offline ? 'none' : 'pulse-dot 2s ease-in-out infinite',
+        }}
+      />
+      {label || (offline ? 'OFFLINE' : 'LIVE')}
     </div>
   )
 }

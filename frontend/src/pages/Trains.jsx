@@ -1,211 +1,218 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import AlertBadge from '../components/AlertBadge'
-import LiveIndicator from '../components/LiveIndicator'
+import { getCurrentTrains } from '../api'
 
-const STRESS_ORDER = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, STABLE: 4 }
+const SEVERITIES = ['ALL', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'STABLE']
+const ZONES      = ['ALL', 'NR', 'CR', 'WR', 'ER', 'SR', 'SER', 'NFR', 'NWR', 'SCR']
 
-function StressBar({ level }) {
-  const colors = {
-    CRITICAL: 'var(--red)', HIGH: 'var(--orange)',
-    MEDIUM: 'var(--yellow)', LOW: 'var(--green)',
-    STABLE: 'var(--cyan)',
-  }
-  const widths = { CRITICAL: 100, HIGH: 75, MEDIUM: 50, LOW: 25, STABLE: 10 }
-  const c = colors[level] || 'var(--t3)'
-  const w = widths[level] || 5
-  return (
-    <div style={{ width: 60, height: 4, background: 'var(--raised)', borderRadius: 4, overflow: 'hidden' }}>
-      <div style={{ height: '100%', width: `${w}%`, background: c, borderRadius: 4, boxShadow: `0 0 6px ${c}` }} />
-    </div>
-  )
+const SEV_MAP = {
+  CRITICAL: { color: 'var(--red)',    bg: 'var(--red-bg)',    border: 'var(--red-border)' },
+  HIGH:     { color: 'var(--orange)', bg: 'var(--orange-bg)', border: 'var(--orange-border)' },
+  MEDIUM:   { color: 'var(--yellow)', bg: 'var(--yellow-bg)', border: 'var(--yellow-border)' },
+  LOW:      { color: 'var(--green)',  bg: 'var(--green-bg)',  border: 'var(--green-border)' },
+  STABLE:   { color: 'var(--blue)',   bg: 'var(--blue-light)', border: 'var(--blue-border)' },
 }
 
 export default function Trains() {
-  const navigate = useNavigate()
-  const [trains,  setTrains]   = useState([])
-  const [loading, setLoading]  = useState(true)
-  const [filter,  setFilter]   = useState('ALL')
-  const [search,  setSearch]   = useState('')
-  const [sortKey, setSortKey]  = useState('stress')
-  const [live,    setLive]     = useState(false)
+  const [trains,   setTrains]   = useState([])
+  const [loading,  setLoading]  = useState(true)
+  const [sev,      setSev]      = useState('ALL')
+  const [zone,     setZone]     = useState('ALL')
+  const [search,   setSearch]   = useState('')
+  const [sortKey,  setSortKey]  = useState('train_id')
+  const [sortAsc,  setSortAsc]  = useState(true)
+  const [live,     setLive]     = useState(false)
 
   const load = async () => {
     try {
-      const res = await fetch('/api/trains/current?limit=200')
-      if (res.ok) {
-        const data = await res.json()
-        console.log('Trains loaded:', Array.isArray(data) ? data.length : 0)
-        setTrains(Array.isArray(data) ? data : [])
-        setLive(true)
-      } else {
-        console.error('Trains API error:', res.status, res.statusText)
-        setLive(false)
-      }
-    } catch (err) {
-      console.error('Trains fetch error:', err)
-      setLive(false)
-    }
+      const d = await getCurrentTrains()
+      setTrains(d)
+      setLive(true)
+    } catch { setLive(false) }
     setLoading(false)
   }
+
   useEffect(() => { load(); const iv = setInterval(load, 10000); return () => clearInterval(iv) }, [])
 
-  const FILTERS = ['ALL', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'STABLE']
+  const toggleSort = (key) => {
+    if (sortKey === key) setSortAsc(v => !v)
+    else { setSortKey(key); setSortAsc(true) }
+  }
 
   const filtered = trains
-    .filter(t => filter === 'ALL' || t.stress_level === filter)
+    .filter(t => sev === 'ALL' || t.stress_level === sev)
+    .filter(t => zone === 'ALL' || t.zone === zone)
     .filter(t => {
       if (!search) return true
       const q = search.toLowerCase()
-      return (t.train_id||'').toLowerCase().includes(q)
-          || (t.current_station||'').toLowerCase().includes(q)
-          || (t.zone||'').toLowerCase().includes(q)
+      return (
+        (t.train_id?.toLowerCase().includes(q)) ||
+        (t.train_name?.toLowerCase().includes(q)) ||
+        (t.current_station?.toLowerCase().includes(q))
+      )
     })
     .sort((a, b) => {
-      if (sortKey === 'stress') return (STRESS_ORDER[a.stress_level] ?? 5) - (STRESS_ORDER[b.stress_level] ?? 5)
-      if (sortKey === 'speed')  return (b.speed || 0) - (a.speed || 0)
-      if (sortKey === 'delay')  return (b.delay_minutes || 0) - (a.delay_minutes || 0)
-      return 0
+      let av = a[sortKey] ?? ''
+      let bv = b[sortKey] ?? ''
+      if (typeof av === 'string') av = av.toLowerCase()
+      if (typeof bv === 'string') bv = bv.toLowerCase()
+      return sortAsc ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1)
     })
 
-  const counts = FILTERS.reduce((acc, f) => {
-    acc[f] = f === 'ALL' ? trains.length : trains.filter(t => t.stress_level === f).length
+  const counts = SEVERITIES.reduce((acc, s) => {
+    acc[s] = s === 'ALL' ? trains.length : trains.filter(t => t.stress_level === s).length
     return acc
   }, {})
 
-  const COLS = [
-    { key: 'train_id',        label: 'Train ID',    sortable: false, width: 120 },
-    { key: 'stress',          label: 'Stress',      sortable: true,  width: 100 },
-    { key: 'stress_bar',      label: '',            sortable: false, width: 80 },
-    { key: 'current_station', label: 'Station',     sortable: false, width: 140 },
-    { key: 'zone',            label: 'Zone',        sortable: false, width: 70 },
-    { key: 'speed',           label: 'Speed',       sortable: true,  width: 90 },
-    { key: 'delay_minutes',   label: 'Delay',       sortable: true,   width: 80 },
-    { key: 'action',          label: '',            sortable: false, width: 80 },
-  ]
+  const SortTh = ({ k, label }) => (
+    <th onClick={() => toggleSort(k)} style={{ cursor: 'pointer', userSelect: 'none' }}>
+      {label} {sortKey === k ? (sortAsc ? ' ↑' : ' ↓') : ''}
+    </th>
+  )
 
   return (
-    <div style={{ padding: '32px 28px', maxWidth: 1440, margin: '0 auto' }}>
-      {/* Header */}
-      <div style={{ marginBottom: 24 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 4 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '0.04em' }}>Live Train Tracker</h1>
-          <LiveIndicator label={live ? 'LIVE' : 'OFFLINE'} offline={!live} />
+    <div>
+      {/* Page header */}
+      <div className="page-header">
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 2 }}>
+            <div className="page-header-title">Live Train Tracker</div>
+            <div className={`live-pill ${live ? 'online' : 'offline'}`}>
+              <span className="pulse-dot" style={{ background: live ? 'var(--green)' : 'var(--t4)', animation: live ? 'pulse-dot 2s ease-in-out infinite' : 'none' }} />
+              {live ? 'LIVE' : 'OFFLINE'}
+            </div>
+          </div>
+          <div className="page-header-sub">All active trains across Indian Railway zones — real-time stress monitoring</div>
         </div>
-        <p style={{ color: 'var(--t2)', fontSize: 13 }}>All active trains across Indian Railway zones — real-time stress monitoring</p>
+        <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: 'var(--blue)' }}>{trains.length}</div>
       </div>
 
-      {/* Filter + Search */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {FILTERS.map(f => {
-            const colors = { CRITICAL: 'var(--red)', HIGH: 'var(--orange)', MEDIUM: 'var(--yellow)', LOW: 'var(--green)', STABLE: 'var(--cyan)', ALL: 'var(--purple)' }
-            const c = colors[f]
-            const active = filter === f
+      <div className="container" style={{ paddingTop: 16 }}>
+
+        {/* ── Summary strip ── */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+          {['CRITICAL','HIGH','MEDIUM','LOW','STABLE'].map(s => {
+            const m = SEV_MAP[s]
             return (
-              <button key={f} onClick={() => setFilter(f)} style={{
-                padding: '5px 14px', borderRadius: 20, border: `1px solid ${active ? c : 'var(--b1)'}`,
-                background: active ? `${c}15` : 'transparent',
-                color: active ? c : 'var(--t2)', fontSize: 11.5, fontWeight: 700,
-                letterSpacing: '0.08em', cursor: 'pointer', transition: 'all 180ms ease',
-                fontFamily: 'JetBrains Mono, monospace',
-              }}>
-                {f} {counts[f] > 0 && <span style={{ opacity: .7 }}>({counts[f]})</span>}
+              <button
+                key={s}
+                className={`btn-filter ${sev === s ? `active-${s.toLowerCase()}` : ''}`}
+                onClick={() => setSev(sev === s ? 'ALL' : s)}
+              >
+                {s} ({counts[s]})
               </button>
             )
           })}
+          <div style={{ flex: 1 }} />
+          <button className={`btn-filter ${sev === 'ALL' ? 'active-all' : ''}`} onClick={() => setSev('ALL')}>
+            ALL ({counts.ALL})
+          </button>
         </div>
 
-        <input
-          value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="Search trains, stations, zones..."
-          style={{
-            flex: 1, minWidth: 200, padding: '7px 16px',
-            background: 'var(--surface)', border: '1px solid var(--b1)',
-            borderRadius: 'var(--r-sm)', color: 'var(--t1)', fontSize: 13,
-            outline: 'none',
-          }}
-        />
-
-        <div style={{ display: 'flex', gap: 6 }}>
-          {[{ k: 'stress', l: 'STRESS' }, { k: 'speed', l: 'SPEED' }, { k: 'delay', l: 'DELAY' }].map(({ k, l }) => (
-            <button key={k} onClick={() => setSortKey(k)} style={{
-              padding: '5px 12px', borderRadius: 8,
-              background: sortKey === k ? 'var(--cyan-10)' : 'transparent',
-              border: `1px solid ${sortKey === k ? 'var(--cyan-30)' : 'var(--b1)'}`,
-              color: sortKey === k ? 'var(--cyan)' : 'var(--t3)',
-              fontSize: 10, fontWeight: 700, cursor: 'pointer',
-              letterSpacing: '0.10em', fontFamily: 'JetBrains Mono, monospace',
-            }}>{l} ↓</button>
-          ))}
-        </div>
-      </div>
-
-      {/* Table */}
-      <div style={{ background: 'var(--glass)', backdropFilter: 'var(--blur)', WebkitBackdropFilter: 'var(--blur)', border: '1px solid var(--b1)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
-        {/* Table header */}
-        <div style={{ display: 'grid', gridTemplateColumns: '120px 100px 80px 1fr 70px 90px 80px 80px', padding: '10px 20px', borderBottom: '1px solid var(--b1)', background: 'var(--surface)' }}>
-          {COLS.map(c => (
-            <span key={c.key} style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.12em', color: 'var(--t3)', textTransform: 'uppercase', fontFamily: 'JetBrains Mono, monospace' }}>
-              {c.label}
-            </span>
-          ))}
-        </div>
-
-        {/* Table rows */}
-        {loading ? (
-          <div style={{ textAlign: 'center', padding: '40px', color: 'var(--t3)', fontSize: 13 }}>
-            Loading trains...
-          </div>
-        ) : filtered.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '60px', color: 'var(--t3)' }}>
-            <div style={{ fontSize: 32, marginBottom: 10 }}>⟁</div>
-            <div style={{ fontSize: 14, fontWeight: 600 }}>No trains found</div>
-            <div style={{ fontSize: 12, marginTop: 4 }}>Telemetry producer may still be warming up</div>
-          </div>
-        ) : filtered.map((t, i) => (
-          <div key={t.train_id || i}
-            onClick={() => navigate(`/train/${t.train_id}`)}
+        {/* ── Filters row ── */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+          <input
+            placeholder="Search train ID, name, station…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
             style={{
-              display: 'grid',
-              gridTemplateColumns: '120px 100px 80px 1fr 70px 90px 80px 80px',
-              padding: '12px 20px',
-              borderBottom: '1px solid var(--b1)',
-              cursor: 'pointer',
-              transition: 'background 150ms ease',
-              alignItems: 'center',
+              flex: 1, minWidth: 220,
+              padding: '7px 12px', fontSize: 13,
+              border: '1px solid var(--border)', borderRadius: 'var(--r-sm)',
+              background: 'var(--bg-surface)', color: 'var(--t1)',
             }}
-            onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,212,255,.04)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          />
+          <select
+            value={zone}
+            onChange={e => setZone(e.target.value)}
+            style={{
+              padding: '7px 12px', fontSize: 12, borderRadius: 'var(--r-sm)',
+              border: '1px solid var(--border)', background: 'var(--bg-surface)', color: 'var(--t1)',
+            }}
           >
-            <span className="mono" style={{ fontSize: 13, fontWeight: 700, color: 'var(--t1)' }}>
-              {t.train_id || '—'}
-            </span>
-            <span><AlertBadge severity={t.stress_level || 'STABLE'} /></span>
-            <span><StressBar level={t.stress_level} /></span>
-            <span style={{ fontSize: 12, color: 'var(--t2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 8 }}>
-              {t.current_station || '—'}
-            </span>
-            <span className="mono" style={{ fontSize: 11, color: 'var(--t3)', fontWeight: 600 }}>{t.zone || '—'}</span>
-            <span className="mono" style={{ fontSize: 13, color: 'var(--cyan)' }}>
-              {t.speed != null ? `${Math.round(t.speed)} km/h` : '—'}
-            </span>
-            <span className="mono" style={{ fontSize: 13, color: t.delay_minutes > 0 ? 'var(--orange)' : 'var(--green)' }}>
-              {t.delay_minutes != null ? `${t.delay_minutes > 0 ? '+' : ''}${t.delay_minutes}m` : '—'}
-            </span>
-            <span style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 600 }}>VIEW →</span>
-          </div>
-        ))}
+            {ZONES.map(z => <option key={z} value={z}>{z === 'ALL' ? 'All Zones' : z}</option>)}
+          </select>
+        </div>
 
-        {/* Footer */}
+        {/* ── Main table ── */}
+        <div className="card">
+          {loading ? (
+            <div className="empty-state">
+              <div style={{ width: 24, height: 24, border: '2px solid var(--border)', borderTopColor: 'var(--blue)', borderRadius: '50%', animation: 'spin 0.8s linear infinite', marginBottom: 12 }} />
+              <div className="empty-state-sub">Loading telemetry…</div>
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <SortTh k="train_id"       label="TRAIN ID" />
+                    <SortTh k="train_name"     label="NAME" />
+                    <SortTh k="current_station"label="STATION" />
+                    <SortTh k="zone"           label="ZONE" />
+                    <SortTh k="stress_level"   label="STRESS" />
+                    <SortTh k="speed"          label="SPEED" />
+                    <SortTh k="delay_minutes"  label="DELAY" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.length === 0 ? (
+                    <tr><td colSpan={7}>
+                      <div className="empty-state">
+                        <div className="empty-state-icon">⊡</div>
+                        <div className="empty-state-title">No trains found</div>
+                        <div className="empty-state-sub">
+                          {trains.length === 0
+                            ? 'Telemetry producer may still be warming up'
+                            : 'Try adjusting filters'}
+                        </div>
+                      </div>
+                    </td></tr>
+                  ) : filtered.map(t => {
+                    const sMap = SEV_MAP[t.stress_level] || SEV_MAP.STABLE
+                    return (
+                      <tr key={t.train_id} className={t.stress_level === 'CRITICAL' ? 'row-critical' : t.stress_level === 'HIGH' ? 'row-high' : ''}>
+                        <td>
+                          <span className="mono" style={{ fontWeight: 700, color: 'var(--blue)', fontSize: 12 }}>
+                            {t.train_id}
+                          </span>
+                        </td>
+                        <td style={{ fontWeight: 500, color: 'var(--t1)', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {t.train_name || '—'}
+                        </td>
+                        <td>
+                          <span className="mono" style={{ fontSize: 12 }}>{t.current_station || '—'}</span>
+                        </td>
+                        <td>
+                          <span style={{ fontWeight: 600, fontSize: 12, color: 'var(--t2)' }}>{t.zone || '—'}</span>
+                        </td>
+                        <td>
+                          <span className={`badge badge-${(t.stress_level || 'STABLE').toLowerCase()}`}>
+                            {t.stress_level || 'STABLE'}
+                          </span>
+                        </td>
+                        <td>
+                          <span className="mono" style={{ fontSize: 12 }}>
+                            {t.speed != null ? `${Math.round(t.speed)} km/h` : '—'}
+                          </span>
+                        </td>
+                        <td>
+                          <span className="mono" style={{ fontSize: 12, color: t.delay_minutes > 30 ? 'var(--red)' : 'var(--t2)' }}>
+                            {t.delay_minutes != null ? `${Math.round(t.delay_minutes)} min` : '—'}
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Footer count */}
         {filtered.length > 0 && (
-          <div style={{ padding: '10px 20px', borderTop: '1px solid var(--b1)', display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: 11, color: 'var(--t3)' }}>
-              Showing {filtered.length} of {trains.length} trains
-            </span>
-            <span className="mono" style={{ fontSize: 10, color: 'var(--t3)', letterSpacing: '0.1em' }}>
-              AUTO-REFRESH 10s
-            </span>
+          <div style={{ fontSize: 11.5, color: 'var(--t4)', marginTop: 10, textAlign: 'right' }}>
+            Showing {filtered.length} of {trains.length} trains · Updates every 10s
           </div>
         )}
       </div>

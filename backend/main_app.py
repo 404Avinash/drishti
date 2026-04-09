@@ -59,41 +59,29 @@ app = FastAPI(
 @app.on_event("startup")
 async def startup_event():
     """Initialize on app startup."""
-    logger.info("🚀 DRISHTI Backend starting...")
+    logger.info("[DRISHTI] Backend starting...")
     
-    # ── Initialize database tables (non-blocking) ──
-    logger.info("🔄 Initializing database in background...")
+    # Initialize database tables (non-blocking)
+    logger.info("[DRISHTI] Initializing database...")
     try:
-        # Try to initialize quickly, but don't block if RDS is slow
         applied = run_migrations()
         if applied:
-            logger.info(f"✅ Applied migrations: {applied}")
+            logger.info(f"[DRISHTI] Applied migrations: {applied}")
         else:
-            logger.info("✅ Database already initialized")
+            logger.info("[DRISHTI] Database already initialized")
     except Exception as e:
-        # Log but don't crash - backend will report degraded status
-        logger.warning(f"⚠️  Database initialization warning (will retry): {e}")
+        # Don't crash - backend will report degraded status
+        logger.warning(f"[DRISHTI] Database initialization warning (will retry): {e}")
     
-    print("""
-    ================================================================================
-    ✅ DRISHTI PRODUCTION INTELLIGENCE ENGINE STARTING
-    
-    ✓ Real-time Train Telemetry Ingestion (100+ trains/second)
-    ✓ Cascade Propagation Simulator (Network analysis)
-    ✓ Incident Detection (Isolation Forest)
-    ✓ Delay Prediction (LSTM neural network)
-    ✓ Unified Alert Reasoning (Multi-model consensus)
-    ✓ Real-time Visualization (WebSocket streams)
-    ✓ Production Recommendations (Actionable AI outputs)
-    
-    Starting 6 analysis workers + 3 ML inference engines...
-    ================================================================================
-    """)
+    import sys
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace') if hasattr(sys.stdout, 'reconfigure') else None
+    logger.info("[DRISHTI] PRODUCTION INTELLIGENCE ENGINE READY")
+    logger.info("[DRISHTI] Services: Telemetry | Cascade | Bayesian | CRS | Alert | WebSocket")
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on app shutdown."""
-    logger.info("🛑 DRISHTI Backend shutting down...")
+    logger.info("[DRISHTI] Backend shutting down...")
 
 # ── FASTAPI APP SETUP ──────────────────────────────────────────────────────
 

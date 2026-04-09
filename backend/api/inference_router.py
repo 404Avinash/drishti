@@ -381,17 +381,61 @@ async def get_models_status(
 async def health_check() -> Dict[str, Any]:
     """
     Health check endpoint for inference service.
+    Always returns a response — never crashes.
+    Returns 'healthy' if pipeline is loaded, 'degraded' if checkpoints are missing,
+    'initializing' if pipeline is still loading.
     """
+    global _pipeline
     try:
-        pipeline = await get_inference_pipeline()
+        # Don't force-load the pipeline — just check if it's already loaded
+        if _pipeline is not None:
+            return {
+                'status': 'healthy',
+                'service': 'inference',
+                'models_loaded': True,
+                'timestamp': datetime.now().isoformat(),
+            }
+        else:
+            # Try a non-blocking check
+            return {
+                'status': 'degraded',
+                'service': 'inference',
+                'models_loaded': False,
+                'reason': 'Pipeline not yet initialized — checkpoint files may be missing',
+                'timestamp': datetime.now().isoformat(),
+            }
+    except Exception as e:
+        logger.warning(f"Inference health check warning: {e}")
         return {
-            'status': 'healthy',
+            'status': 'degraded',
             'service': 'inference',
+            'models_loaded': False,
+            'reason': str(e),
             'timestamp': datetime.now().isoformat(),
         }
-    except:
-        return {
-            'status': 'unhealthy',
-            'service': 'inference',
-            'timestamp': datetime.now().isoformat(),
-        }
+
+
+@router.get("/status")
+async def inference_status() -> Dict[str, Any]:
+    """
+    Simplified status endpoint — always responds with model metadata without
+    requiring pipeline initialization. Safe to call on cold-start.
+    """
+    global _pipeline
+    return {
+        'status': 'ready' if _pipeline is not None else 'standby',
+        'pipeline_loaded': _pipeline is not None,
+        'models_registered': [
+            'Bayesian Network (pgmpy)',
+            'Isolation Forest (sklearn)',
+            'Causal DAG (networkx)',
+            'DBSCAN Trajectory Clustering',
+            'Neural Ensemble (LSTM)',
+        ],
+        'ensemble_weights': {
+            'bayesian': 0.40,
+            'isolation_forest': 0.35,
+            'causal_dag': 0.25,
+        },
+        'timestamp': datetime.now().isoformat(),
+    }
