@@ -240,21 +240,27 @@ from backend.api.trains_router import router as trains_router
 app.include_router(trains_router)
 
 # ── Inference router (graceful — doesn't crash if ML pipeline unavailable) ─────
+from datetime import datetime as _dt  # needed by stub endpoints below
+
 try:
     from backend.api.inference_router import router as inference_router
     app.include_router(inference_router)
     logger.info("[DRISHTI] Inference router registered")
-except Exception as _ie:
-    logger.warning(f"[WARN] Inference router unavailable: {_ie}")
-    # Provide stub endpoints so frontend shows 'degraded' not error
+    _inference_unavailable_reason = None
+except Exception as _exc:
+    _inference_unavailable_reason = str(_exc)
+    logger.warning(f"[WARN] Inference router unavailable: {_exc}")
+
+if _inference_unavailable_reason is not None:
+    # Provide stub endpoints so frontend shows 'degraded' not 404
     from fastapi import APIRouter as _AR
-    from datetime import datetime as _dt
     _stub = _AR(prefix="/api/inference", tags=["inference"])
+    _reason = _inference_unavailable_reason  # capture in closure
 
     @_stub.get("/health")
     async def _inf_health():
         return {"status": "degraded", "service": "inference", "models_loaded": False,
-                "reason": str(_ie), "timestamp": _dt.now().isoformat()}
+                "reason": _reason, "timestamp": _dt.now().isoformat()}
 
     @_stub.get("/status")
     async def _inf_status():
