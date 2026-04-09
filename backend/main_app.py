@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 # ── IMPORT ALL INTELLIGENCE MODULES ─────────────────────────────────────
-from backend.api import cascade_viz, alert_reasoning, trains_router, data_endpoints, simulation
+from backend.api import cascade_viz, alert_reasoning, trains_router, data_endpoints, simulation, inference_router
 from backend.db.session import get_db, test_database_connection
 from backend.db.migrations import run_migrations
 # Note: ML modules imported dynamically when needed
@@ -112,6 +112,7 @@ app.include_router(alert_reasoning.router)
 app.include_router(trains_router.router)
 app.include_router(data_endpoints.router)
 app.include_router(simulation.router)
+app.include_router(inference_router.router)
 
 # ── HEALTH CHECK ───────────────────────────────────────────────────────────
 
