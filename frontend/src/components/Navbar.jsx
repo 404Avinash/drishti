@@ -9,6 +9,7 @@ const NAV_LINKS = [
   { to: '/simulation', label: 'Simulation', icon: '⚡' },
   { to: '/alerts', label: 'Alerts', icon: '⚠' },
   { to: '/ai', label: 'AI Brain', icon: '⬙' },
+  { to: '/inference', label: 'Inference', icon: '◈' },
   { to: '/ai-decisions', label: 'AI Decisions', icon: '🧠' },
   { to: '/system', label: 'System', icon: '⊞' },
 ]

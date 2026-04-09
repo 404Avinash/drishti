@@ -10,6 +10,7 @@ import Models from './pages/Models'
 import System from './pages/System'
 import Simulation from './pages/Simulation'
 import AIDecisions from './pages/AIDecisions'
+import Inference from './pages/Inference'
 import './index.css'
 import './App.css'
 
@@ -39,6 +40,7 @@ export default function App() {
           <Route path="/train/:id"  element={<TrainDetail />} />
           <Route path="/alerts"     element={<Alerts />} />
           <Route path="/ai"         element={<Models />} />
+          <Route path="/inference"  element={<Inference />} />
           <Route path="/system"     element={<System />} />
           <Route path="/simulation" element={<Simulation />} />
           <Route path="/ai-decisions" element={<AIDecisions />} />

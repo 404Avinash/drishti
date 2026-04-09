@@ -4,7 +4,7 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import StatCard from '../components/StatCard'
 import AlertBadge from '../components/AlertBadge'
 import LiveIndicator from '../components/LiveIndicator'
-import { getCurrentTrains, getAlerts, getIngestionSummary, getHealth, getLiveStats } from '../api'
+import { getCurrentTrains, getAlerts, getIngestionSummary, getHealth, getLiveStats, getInferenceHealth } from '../api'
 
 const ZONES = ['NR','CR','WR','ER','SR','SER','NFR','NWR','SCR']
 
@@ -78,20 +78,23 @@ export default function Dashboard() {
   const [live,    setLive]      = useState(false)
   const [sparkData, setSparkData] = useState([])
   const [liveStats, setLiveStats] = useState(null)
+  const [inferenceHealth, setInferenceHealth] = useState(null)
 
   const load = async () => {
     try {
-      const [trains, alerts, ingestion, health, stats] = await Promise.all([
+      const [trains, alerts, ingestion, health, stats, inference] = await Promise.all([
         getCurrentTrains(),
         getAlerts(30),
         getIngestionSummary(),
         getHealth(),
         getLiveStats(),
+        getInferenceHealth(),
       ])
       setTrains(trains)
       setAlerts(alerts.slice(0, 20))
       setIngestion(ingestion)
       setLiveStats(stats)
+      setInferenceHealth(inference)
       setSparkData(prev => {
         const next = [...prev, {
           time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
@@ -131,6 +134,7 @@ export default function Dashboard() {
         <StatCard label="Critical Stress"  value={critical}         color="var(--red)"    icon="⊗" sub="Delay > 60 min" />
         <StatCard label="High Stress"      value={high}             color="var(--orange)" icon="⚠" sub="Delay 30–60 min" />
         <StatCard label="Alerts (stream)"  value={alertTotal}       color="var(--purple)" icon="◉" sub={`${alertCritical} critical — streaming engine`} />
+        <StatCard label="Inference"        value={inferenceHealth?.status === 'healthy' ? '✓' : '◊'} color={inferenceHealth?.status === 'healthy' ? 'var(--green)' : 'var(--orange)'} icon="⬙" sub="Ensemble prediction engine" />
       </div>
 
       {/* Main grid */}
@@ -211,9 +215,10 @@ export default function Dashboard() {
           {/* Quick links */}
           <div style={{ display: 'flex', gap: 12 }}>
             {[
-              { label: 'View All Trains → ', to: '/trains',  color: 'var(--cyan)' },
-              { label: 'Network Map →',      to: '/network', color: 'var(--purple)' },
-              { label: 'AI Models →',        to: '/ai',      color: 'var(--orange)' },
+              { label: 'View All Trains → ', to: '/trains',   color: 'var(--cyan)' },
+              { label: 'Network Map →',      to: '/network',  color: 'var(--purple)' },
+              { label: 'AI Models →',        to: '/ai',       color: 'var(--orange)' },
+              { label: 'Live Inference →',   to: '/inference', color: 'var(--green)' },
             ].map(({ label, to, color }) => (
               <button key={to} onClick={() => navigate(to)} style={{
                 flex: 1, padding: '10px 16px', borderRadius: 'var(--r-sm)',

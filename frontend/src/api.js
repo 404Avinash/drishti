@@ -349,3 +349,115 @@ export async function getNetworkVisualizationData() {
     return { nodes: [], links: [], cascade: {} }
   }
 }
+
+// ── Phase 5: Inference API ─────────────────────────────────────────────────────
+
+/**
+ * Get inference engine health and status
+ */
+export async function getInferenceHealth() {
+  try {
+    const d = await _get('/inference/health')
+    return {
+      status: d.status ?? 'unknown',
+      timestamp: d.timestamp ?? new Date().toISOString(),
+    }
+  } catch {
+    return { status: 'offline', timestamp: null }
+  }
+}
+
+/**
+ * Get inference models status and loaded models
+ */
+export async function getInferenceModels() {
+  try {
+    const d = await _get('/inference/models')
+    return {
+      status: d.status ?? 'ready',
+      models_loaded: d.models_loaded ?? 0,
+      registered_models: d.registered_models ?? [],
+      inference_metrics: d.inference_metrics ?? {},
+      timestamp: d.timestamp ?? new Date().toISOString(),
+    }
+  } catch {
+    return { status: 'offline', models_loaded: 0, registered_models: [], inference_metrics: {}, timestamp: null }
+  }
+}
+
+/**
+ * Single prediction with 5-method voting
+ */
+export async function predictSingle(trainId, features, traditionaInputs) {
+  try {
+    const payload = {
+      train_id: trainId,
+      features: features,
+      bayesian_risk: traditionaInputs.bayesian_risk ?? 0.5,
+      anomaly_score: traditionaInputs.anomaly_score ?? 50,
+      dbscan_anomaly: traditionaInputs.dbscan_anomaly ?? false,
+      causal_risk: traditionaInputs.causal_risk ?? 0.5,
+    }
+    
+    const res = await fetch(`${BASE}/inference/predict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const d = await res.json()
+    
+    return {
+      train_id: d.train_id,
+      alert_fires: d.alert_fires ?? false,
+      severity: d.severity ?? 'LOW',
+      consensus_risk: d.consensus_risk ?? 0,
+      methods_agreeing: d.methods_agreeing ?? 0,
+      neural_predictions: d.neural_predictions ?? {},
+      neural_latency_ms: d.neural_latency_ms ?? 0,
+      votes_breakdown: d.votes_breakdown ?? [],
+      recommended_actions: d.recommended_actions ?? [],
+      explanation: d.explanation ?? '',
+    }
+  } catch (err) {
+    console.error('[Inference]', err)
+    return { train_id: trainId, alert_fires: false, severity: 'LOW', consensus_risk: 0, methods_agreeing: 0, error: err.message }
+  }
+}
+
+/**
+ * Batch predictions (1-100 samples)
+ */
+export async function predictBatch(trainIds, featuresList, aggregation = 'mean') {
+  try {
+    const payload = {
+      job_id: `batch_${Date.now()}`,
+      train_ids: trainIds,
+      features: featuresList,
+      aggregation: aggregation,
+    }
+    
+    const res = await fetch(`${BASE}/inference/batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const d = await res.json()
+    
+    return {
+      job_id: d.job_id ?? '',
+      status: d.status ?? 'complete',
+      num_samples: d.num_samples ?? 0,
+      total_latency_ms: d.total_latency_ms ?? 0,
+      per_sample_latency_ms: d.per_sample_latency_ms ?? 0,
+      aggregation: d.aggregation ?? aggregation,
+      predictions: d.predictions ?? [],
+    }
+  } catch (err) {
+    console.error('[Batch Inference]', err)
+    return { job_id: '', status: 'error', num_samples: 0, total_latency_ms: 0, predictions: [], error: err.message }
+  }
+}
