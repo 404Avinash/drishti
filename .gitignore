@@ -54,6 +54,10 @@ htmlcov/
 !package.json
 !package-lock.json
 
+# Large data files - use Git LFS or download separately
+*.h5
+*.npz
+
 # Temporary files
 *.tmp
 .env
