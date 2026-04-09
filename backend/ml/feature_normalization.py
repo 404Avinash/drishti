@@ -330,6 +330,7 @@ class TimeSeriesDatasetLoader:
         return fold_loaders, manager
     
     @staticmethod
+    def create_tensorflow_dataset(
         X: np.ndarray,
         y: np.ndarray,
         batch_size: int = 32,
