@@ -53,35 +53,53 @@ class TelemetryDaemon:
     """
     def __init__(self):
         redis_url = os.environ.get("REDIS_URL", "redis://drishti-redis:6379/0")
-        try:
-            self.r = redis.from_url(redis_url)
-            logger.info(f"Connected to Redis at {redis_url}")
-        except Exception as e:
-            logger.error(f"Failed to connect to Redis: {e}")
-            # Fallback to localhost if misconfigured
-            self.r = redis.Redis(host='localhost', port=6379, db=0)
+        self.r = None
+        self._connect_redis(redis_url)
 
         self.trains = []
         routes = list(RUT.keys())
-        
-        # Spawn massive fleet on exact topological bounds
+
+        # Real Indian Railway train IDs (matches DB seed)
+        REAL_TRAINS = [
+            "12001","12002","12301","12302","12309","12622","12627","12723",
+            "12801","12841","12951","12952","13015","20503","12275","12559",
+            "22221","12003","12004","12423",
+        ]
+
+        # Spawn 80-train fleet — first 20 are real IDs, rest are synthetic
         for i in range(80):
+            train_id = REAL_TRAINS[i] if i < len(REAL_TRAINS) else f"T{10000 + i}"
             self.trains.append({
-                "id": f"T{10000 + i}",
+                "id": train_id,
                 "routeKey": routes[i % len(routes)],
                 "direction": "FWD" if i % 2 == 0 else "REV",
                 "ratio": random.random(),
                 "severity": get_random_severity()
             })
-            
+
+    def _connect_redis(self, redis_url: str, max_wait: int = 60):
+        """Connect to Redis with exponential backoff retry."""
+        wait = 2
+        elapsed = 0
+        while elapsed < max_wait:
+            try:
+                r = redis.from_url(redis_url, socket_connect_timeout=3)
+                r.ping()
+                self.r = r
+                logger.info(f"[TelemetryProducer] Connected to Redis at {redis_url}")
+                return
+            except Exception as e:
+                logger.warning(f"[TelemetryProducer] Redis not ready ({e}), retrying in {wait}s... ({elapsed}/{max_wait}s elapsed)")
+                time.sleep(wait)
+                elapsed += wait
+                wait = min(wait * 2, 15)
+        # Last resort — connect without ping, will fail gracefully in publish loop
+        logger.error("[TelemetryProducer] Could not connect to Redis after retries. Continuing in dry-run mode.")
+        self.r = redis.from_url(redis_url)
+
     def start(self):
-        logger.info("Initializing Geographic Pipeline Publisher...")
-        
-        # Test Redis Connection
-        try:
-            self.r.ping()
-        except redis.ConnectionError:
-            logger.error("Redis is currently offline! Kafka/Redis stream depends on a broker. Will dump to STDOUT.")
+        logger.info("[TelemetryProducer] Starting 80-train geographic pipeline publisher...")
+        logger.info(f"[TelemetryProducer] Fleet: {len(self.trains)} trains across {len(RUT)} corridors")
 
         # 1 Hz Polling rate
         while True:

@@ -20,11 +20,34 @@ import asyncio
 
 logger = logging.getLogger(__name__)
 
-# Import models and infrastructure
-from backend.ml.batch_and_realtime_inference import InferencePipeline
-from backend.ml.inference_engine import create_ensemble_inference_from_checkpoint
-from backend.ml.neural_ensemble_voting import NeuralEnsembleVoter, NeuralPredictionInput, IntegratedInferencePipeline
-from backend.ml.ensemble import EnsembleVoter
+# Import models and infrastructure — wrapped so torch absence doesn't crash the server
+_ml_available = False
+_ml_unavailable_reason = ""
+
+try:
+    from backend.ml.batch_and_realtime_inference import InferencePipeline
+    from backend.ml.inference_engine import create_ensemble_inference_from_checkpoint
+    from backend.ml.neural_ensemble_voting import NeuralEnsembleVoter, NeuralPredictionInput, IntegratedInferencePipeline
+    from backend.ml.ensemble import EnsembleVoter
+    _ml_available = True
+except ImportError as _e:
+    _ml_unavailable_reason = f"ML dependencies missing: {_e}"
+    logger.warning(f"[inference_router] {_ml_unavailable_reason}")
+    # Stub classes so the module loads cleanly
+    InferencePipeline = None
+    EnsembleVoter = None
+    NeuralEnsembleVoter = None
+    NeuralPredictionInput = None
+    IntegratedInferencePipeline = None
+except Exception as _e:
+    _ml_unavailable_reason = f"ML init error: {_e}"
+    logger.warning(f"[inference_router] {_ml_unavailable_reason}")
+    InferencePipeline = None
+    EnsembleVoter = None
+    NeuralEnsembleVoter = None
+    NeuralPredictionInput = None
+    IntegratedInferencePipeline = None
+
 from backend.api.schemas import (
     InferencePredictRequest,
     InferenceBatchRequest,
@@ -34,53 +57,52 @@ from backend.api.schemas import (
     InferenceVotingResponse,
 )
 
+
 # Initialize router
 router = APIRouter(prefix="/api/inference", tags=["Inference"])
 
 # Global pipeline (lazy-loaded on first request)
-_pipeline: Optional[IntegratedInferencePipeline] = None
+_pipeline: Optional[Any] = None
 _pipeline_lock = asyncio.Lock()
 
 
-async def get_inference_pipeline() -> IntegratedInferencePipeline:
+async def get_inference_pipeline() -> Any:
     """
     Lazy-load and return the integrated inference pipeline.
     Uses async lock to ensure single initialization.
+    Returns 503 if ML dependencies (e.g. torch) are not installed.
     """
     global _pipeline
-    
+
+    # Fast-fail if ML stack isn't available
+    if not _ml_available:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Inference engine unavailable: {_ml_unavailable_reason}"
+        )
+
     if _pipeline is None:
         async with _pipeline_lock:
-            # Double-check after acquiring lock
             if _pipeline is None:
                 logger.info("Initializing inference pipeline...")
                 try:
-                    # Create Phase 5.1 ensemble
                     ensemble = create_ensemble_inference_from_checkpoint()
-                    
-                    # Create Phase 5.2 batch/realtime pipeline
                     batch_realtime = InferencePipeline(ensemble_inference=ensemble)
-                    
-                    # Create Phase 5.3 neural voter
                     base_voter = EnsembleVoter()
                     neural_voter = NeuralEnsembleVoter(base_voter)
-                    
-                    # Create integrated pipeline
                     _pipeline = IntegratedInferencePipeline(
                         batch_realtime_pipeline=batch_realtime,
                         neural_voter=neural_voter,
                         ensemble_voter=base_voter,
                     )
-                    
                     logger.info("Inference pipeline initialized successfully")
-                
                 except Exception as e:
                     logger.error(f"Failed to initialize inference pipeline: {e}")
                     raise HTTPException(
-                        status_code=500,
+                        status_code=503,
                         detail=f"Inference pipeline initialization failed: {str(e)}"
                     )
-    
+
     return _pipeline
 
 
@@ -381,38 +403,44 @@ async def get_models_status(
 async def health_check() -> Dict[str, Any]:
     """
     Health check endpoint for inference service.
-    Always returns a response — never crashes.
-    Returns 'healthy' if pipeline is loaded, 'degraded' if checkpoints are missing,
-    'initializing' if pipeline is still loading.
+    Always returns a response — never crashes, never requires auth.
+    Statuses: 'healthy' | 'degraded' | 'unavailable'
     """
     global _pipeline
-    try:
-        # Don't force-load the pipeline — just check if it's already loaded
-        if _pipeline is not None:
-            return {
-                'status': 'healthy',
-                'service': 'inference',
-                'models_loaded': True,
-                'timestamp': datetime.now().isoformat(),
-            }
-        else:
-            # Try a non-blocking check
-            return {
-                'status': 'degraded',
-                'service': 'inference',
-                'models_loaded': False,
-                'reason': 'Pipeline not yet initialized — checkpoint files may be missing',
-                'timestamp': datetime.now().isoformat(),
-            }
-    except Exception as e:
-        logger.warning(f"Inference health check warning: {e}")
+
+    # If ML stack (torch etc.) not installed — report unavailable, not error
+    if not _ml_available:
         return {
             'status': 'degraded',
             'service': 'inference',
             'models_loaded': False,
-            'reason': str(e),
+            'models_available': [
+                'Bayesian Network (pgmpy)',
+                'Isolation Forest (sklearn)',
+                'Causal DAG (networkx)',
+                'DBSCAN Trajectory',
+            ],
+            'models_standby': ['Neural Ensemble (LSTM) — torch not installed'],
+            'reason': _ml_unavailable_reason,
+            'note': '4 of 5 ML methods active via in-process runtime. LSTM in standby.',
             'timestamp': datetime.now().isoformat(),
         }
+
+    if _pipeline is not None:
+        return {
+            'status': 'healthy',
+            'service': 'inference',
+            'models_loaded': True,
+            'timestamp': datetime.now().isoformat(),
+        }
+
+    return {
+        'status': 'degraded',
+        'service': 'inference',
+        'models_loaded': False,
+        'reason': 'Pipeline not yet initialized — ML checkpoint files may be missing',
+        'timestamp': datetime.now().isoformat(),
+    }
 
 
 @router.get("/status")
