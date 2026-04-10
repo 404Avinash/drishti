@@ -23,8 +23,9 @@ const GROUPS = [
   {
     label: 'Network',
     items: [
-      { to: '/network',  label: 'Map',     icon: '◎' },
-      { to: '/system',   label: 'System',  icon: '⊞' },
+      { to: '/network',  label: 'Map',        icon: '◎' },
+      { to: '/pilot',    label: 'HWH Pilot',  icon: '⊛' },
+      { to: '/system',   label: 'System',     icon: '⊞' },
     ],
   },
 ]

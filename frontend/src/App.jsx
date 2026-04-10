@@ -3,6 +3,7 @@ import Navbar from './components/Navbar'
 import Home from './pages/Home'
 import Dashboard from './pages/Dashboard'
 import Network from './pages/Network'
+import Pilot from './pages/Pilot'
 import Trains from './pages/Trains'
 import TrainDetail from './pages/TrainDetail'
 import Alerts from './pages/Alerts'
@@ -36,6 +37,7 @@ export default function App() {
         <Route element={<AppLayout />}>
           <Route path="/dashboard"  element={<Dashboard />} />
           <Route path="/network"    element={<Network />} />
+          <Route path="/pilot"      element={<Pilot />} />
           <Route path="/trains"     element={<Trains />} />
           <Route path="/train/:id"  element={<TrainDetail />} />
           <Route path="/alerts"     element={<Alerts />} />
