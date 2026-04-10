@@ -62,14 +62,28 @@ def test_model_loader():
     for ranking in rankings:
         print(f"  {ranking['rank']}. {ranking['model'].upper()}: AUC={ranking['val_auc']:.4f}")
     
-    # Try loading first model
+    # Try loading first model (lstm_model_2 with AUC=0.55)
     model_name = rankings[0]['model']
-    config = {
-        'input_size': 15,
-        'hidden_size': 128,
-        'num_layers': 2,
-        'architecture': 'lstm',
-    }
+    
+    # Use architecture matching the actual checkpoint
+    # lstm_model_2: 1 LSTM layer, hidden_size 64, embedding_dim 32
+    # lstm_model_1: 2 LSTM layers, hidden_size 128, embedding_dim 32
+    if model_name == 'lstm_model_2':
+        config = {
+            'input_size': 15,
+            'hidden_size': 64,
+            'num_layers': 1,
+            'embedding_dim': 32,
+            'architecture': 'lstm',
+        }
+    else:  # lstm_model_1
+        config = {
+            'input_size': 15,
+            'hidden_size': 128,
+            'num_layers': 2,
+            'embedding_dim': 32,
+            'architecture': 'lstm',
+        }
     
     model, metadata = loader.load_model(LSTMTemporalClassifier, model_name, config)
     print(f"✓ Loaded model: {model_name}")
