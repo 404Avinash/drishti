@@ -239,6 +239,47 @@ app.include_router(data_router)
 from backend.api.trains_router import router as trains_router
 app.include_router(trains_router)
 
+# ── NTES Live Pilot Data ───────────────────────────────────────────────────────
+from fastapi import APIRouter as _PAR
+from fastapi.responses import JSONResponse as _JR
+
+_pilot_router = _PAR(prefix="/api/pilot", tags=["pilot"])
+
+# The 30 Howrah zone trains we track in the Pilot page
+_PILOT_TRAIN_IDS = [
+    "12301","12302","12273","12274","13005","13006","12375","12259",
+    "12381","12382","12841","12842","12703","12864","12801","12802",
+    "18409","18030","18029","12129","18001","12345","12346","15959",
+    "15960","12423","12424","12507","12552","22811",
+]
+
+@_pilot_router.get("/live-trains")
+async def pilot_live_trains():
+    """
+    Returns live running status for the 30 Howrah Pilot trains.
+    Data is sourced from NTES (Indian Railways enquiry system), cached 5 min.
+    Falls back gracefully if NTES is unreachable.
+    """
+    try:
+        from backend.data.ntes_fetcher import ntes_fetcher
+        results = ntes_fetcher.fetch_batch(_PILOT_TRAIN_IDS)
+        return _JR(content={
+            "status": "ok",
+            "source": "ntes",
+            "fetched_at": datetime.now().isoformat(),
+            "trains": list(results.values()),
+        })
+    except Exception as exc:
+        logger.warning(f"[PILOT] NTES fetch failed: {exc}")
+        return _JR(content={
+            "status": "error",
+            "source": "unavailable",
+            "error": str(exc),
+            "trains": [],
+        })
+
+app.include_router(_pilot_router)
+
 # ── Inference router (graceful — doesn't crash if ML pipeline unavailable) ─────
 from datetime import datetime as _dt  # needed by stub endpoints below
 

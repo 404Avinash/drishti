@@ -268,8 +268,60 @@ export default function HowrahPilot() {
   const [mapCenter,    setMapCenter]    = useState(null)
   const [tick,         setTick]         = useState(0)
   const [lastUpdate,   setLastUpdate]   = useState(new Date())
+  const [ntesSrc,      setNtesSrc]      = useState('sim')   // 'ntes' | 'sim' | 'error'
+  const [ntesAt,       setNtesAt]       = useState(null)
   const wsRef    = useRef(null)
   const animRef  = useRef(null)
+  const ntesRef  = useRef({})  // map of train_no → { delay_minutes, current_station, lat, lng }
+
+  // ── NTES polling (every 5 min) ───────────────────────────────────────────────
+  useEffect(() => {
+    const fetchNTES = async () => {
+      try {
+        const res = await fetch('/api/pilot/live-trains')
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const json = await res.json()
+        if (json.status === 'ok' && Array.isArray(json.trains)) {
+          const map = {}
+          json.trains.forEach(t => { if (t.train_no) map[t.train_no] = t })
+          ntesRef.current = map
+
+          // Merge real delay into fleet state; keep physics-driven position
+          setFleet(prev => prev.map(t => {
+            const real = map[t.id]
+            if (!real) return t
+            const realDelay = real.delay_minutes ?? t.delay
+            // Severity override based on real delay
+            const newSev = realDelay > 60 ? 'CRITICAL'
+                         : realDelay > 30 ? 'HIGH'
+                         : realDelay > 10 ? 'MEDIUM'
+                         : t.severity === 'CRITICAL' ? 'HIGH'  // don't instantly downgrade CRITICAL
+                         : t.severity
+            return {
+              ...t,
+              delay: Math.round(realDelay),
+              severity: newSev,
+              // If NTES gave us the current station coords, snap position there
+              // (only if we don't already have a known lat/lng from physics)
+              ...(real.lat && real.lng && !t.lat ? { lat: real.lat, lng: real.lng } : {}),
+              ntesStation: real.current_station_name || real.current_station || t.nearStation,
+            }
+          }))
+
+          const anyReal = json.trains.filter(t => t.source === 'ntes').length
+          setNtesSrc(anyReal > 0 ? 'ntes' : 'sim')
+          setNtesAt(new Date())
+        }
+      } catch (e) {
+        // NTES unavailable — physics simulation continues independently
+        setNtesSrc('sim')
+      }
+    }
+
+    fetchNTES()  // immediate on mount
+    const iv = setInterval(fetchNTES, 5 * 60 * 1000)  // then every 5 min
+    return () => clearInterval(iv)
+  }, [])
 
   // ── Physics tick (800ms) ────────────────────────────────────────────────────
   useEffect(() => {
@@ -428,9 +480,11 @@ export default function HowrahPilot() {
               }}>PILOT v2</span>
             </div>
             <div style={{ fontSize:'0.57rem', color:'#475569', marginTop:1 }}>
-              {fleet.length} trains · 5 zones · ER SER ECR ECoR NFR ·
-              {wsStatus === 'live' ? ' WS-synced' : ' physics simulation'} ·
-              updated {fmtTime(lastUpdate)}
+              {fleet.length} trains · 5 zones · ER SER ECR ECoR NFR ·&nbsp;
+              {ntesSrc === 'ntes'
+                ? <span style={{color:'#10b981'}}>⬤ NTES delay data live{ntesAt ? ` (${ntesAt.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})})` : ''}</span>
+                : <span style={{color:'#f59e0b'}}>◎ physics sim · NTES updating…</span>
+              }
             </div>
           </div>
         </div>
@@ -535,7 +589,7 @@ export default function HowrahPilot() {
         <div style={{ flex:1, position:'relative' }}>
           <MapContainer
             center={[23.0, 87.0]} zoom={7} minZoom={5} maxZoom={13}
-            maxBounds={[[8.0, 67.0], [30.0, 98.0]}} maxBoundsViscosity={0.85}
+            maxBounds={[[8.0, 67.0], [30.0, 98.0]]} maxBoundsViscosity={0.85}
             style={{ height:'100%', width:'100%', background:'#02040f' }}
           >
             <TileLayer
