@@ -478,7 +478,8 @@ export default function HowrahZonePilot() {
         {/* Leaflet map */}
         <div style={{ flex: 1 }}>
           <MapContainer
-            center={[23.5, 87.5]} zoom={6} minZoom={5} maxZoom={13}
+            center={[23.0, 87.0]} zoom={7} minZoom={5} maxZoom={13}
+            maxBounds={[[8.0, 68.0], [30.0, 98.0]]} maxBoundsViscosity={0.9}
             style={{ height: '100%', width: '100%', background: '#02040f' }}
           >
             <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution="DRISHTI Pilot · © CARTO" />
